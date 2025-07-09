@@ -6,19 +6,19 @@ import sqlite3
 import os
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-import json # Untuk menyimpan data di JSON (alternatif jika SQLite bermasalah dengan persistensi di Railway tanpa volume)
 
 # --- Konfigurasi Flask dan Database ---
-# Mengkonfigurasi Flask untuk mencari templates dan static files di root folder
+# Mendapatkan direktori kerja saat ini di dalam kontainer Docker
 current_dir = os.getcwd()
 app = Flask(__name__,
-            template_folder=current_dir,  # Mencari index.html di root
-            static_folder=current_dir)    # Mencari style.css, script.js di root
+            template_folder=current_dir,  # Flask akan mencari index.html di direktori ini
+            static_folder=current_dir)    # Flask akan mencari style.css & script.js di direktori ini
 
 DATABASE = 'reminders.db'
 
-# --- Database Helper Functions ---
+# --- Fungsi Pembantu untuk Interaksi Database ---
 def get_db():
+    """Mendapatkan koneksi database SQLite. Membuat baru jika belum ada."""
     db = getattr(g, '_database', None)
     if db is None:
         db = g._database = sqlite3.connect(DATABASE)
@@ -27,17 +27,20 @@ def get_db():
 
 @app.teardown_appcontext
 def close_connection(exception):
+    """Menutup koneksi database saat konteks aplikasi selesai."""
     db = getattr(g, '_database', None)
     if db is not None:
         db.close()
 
 def query_db(query, args=(), one=False):
+    """Menjalankan query SELECT ke database."""
     cur = get_db().execute(query, args)
     rv = cur.fetchall()
     cur.close()
     return (rv[0] if rv else None) if one else rv
 
 def insert_db(query, args=()):
+    """Menjalankan query INSERT ke database."""
     db = get_db()
     cur = db.execute(query, args)
     db.commit()
@@ -46,21 +49,23 @@ def insert_db(query, args=()):
     return lastrowid
 
 def update_db(query, args=()):
+    """Menjalankan query UPDATE atau DELETE ke database."""
     db = get_db()
     cur = db.execute(query, args)
     db.commit()
     cur.close()
 
-# --- Your Existing Reminder Logic (Adapted for Web) ---
+# --- Logika AI Pengingat Anda (diadaptasi untuk Web) ---
 TIMEZONE_MAP = {
     "wib": "Asia/Jakarta", "wita": "Asia/Makassar", "wit": "Asia/Jayapura",
     "est": "America/New_York", "pst": "America/Los_Angeles", "gmt": "Etc/GMT",
     "utc": "Etc/UTC", "gmt+7": "Etc/GMT-7", "gmt-7": "Etc/GMT+7"
 }
-# Default ke WIB untuk LOCAL_TIMEZONE, sesuai lokasi Anda
+# Atur zona waktu lokal server, default ke Asia/Jakarta (WIB) jika tidak ada ENV TZ
 LOCAL_TIMEZONE = pytz.timezone(os.environ.get('TZ', 'Asia/Jakarta'))
 
 def add_months(sourcedate, months):
+    """Menambahkan bulan ke objek datetime, menangani akhir bulan dengan benar."""
     month = sourcedate.month + months
     year = sourcedate.year + (month - 1) // 12
     month = (month - 1) % 12 + 1
@@ -68,6 +73,7 @@ def add_months(sourcedate, months):
     return sourcedate.replace(year=year, month=month, day=day, tzinfo=sourcedate.tzinfo)
 
 def extract_schedule(text):
+    """Menguraikan teks input untuk mengekstrak informasi jadwal."""
     original_text = text.lower()
     processed_text = original_text
     
@@ -317,27 +323,28 @@ def format_timezone_display(dt_object):
             return "WITA"
         elif "Eastern Indonesia Standard Time" in tz_name_full:
             return "WIT"
+        # Untuk zona waktu lain, bisa return offset atau nama singkat jika ada
         return "" # Default, hilangkan jika bukan salah satu di atas
     return ""
 
 # --- API Endpoints ---
 
-# Serve the main HTML page
+# Rute untuk menyajikan halaman HTML utama
 @app.route('/')
 def serve_index():
     return render_template('index.html')
 
-# Serve CSS file from root
+# Rute untuk menyajikan file CSS dari root
 @app.route('/style.css')
 def serve_css():
     return send_from_directory(current_dir, 'style.css')
 
-# Serve JS file from root
+# Rute untuk menyajikan file JavaScript dari root
 @app.route('/script.js')
 def serve_js():
     return send_from_directory(current_dir, 'script.js')
 
-# API to add a reminder
+# API untuk menambahkan pengingat
 @app.route('/add_reminder', methods=['POST'])
 def add_reminder_api():
     note = request.json.get('note')
@@ -361,30 +368,63 @@ def add_reminder_api():
     else:
         return jsonify({"success": False, "message": "Tidak dapat mendeteksi jadwal dari catatan Anda. Coba format lain."}), 400
 
-# API to get all reminders
+# API untuk mendapatkan semua pengingat
 @app.route('/get_reminders', methods=['GET'])
 def get_reminders_api():
     reminders = query_db('SELECT * FROM reminders ORDER BY datetime ASC')
-    # Konversi Row objek ke dict dan datetime string ke objek datetime
+    # Konversi Row objek ke dict dan datetime string ke objek datetime untuk frontend
     reminders_list = []
     for r in reminders:
         r_dict = dict(r)
-        r_dict['datetime'] = datetime.fromisoformat(r_dict['datetime']) # Konversi kembali ke datetime object
-        r_dict['formatted_datetime'] = r_dict['datetime'].strftime(f'%d %B %Y %H:%M {format_timezone_display(r_dict["datetime"])}')
+        dt_obj = datetime.fromisoformat(r_dict['datetime']) # Konversi string ISO ke datetime object
+        r_dict['datetime'] = dt_obj.isoformat() # Pastikan tetap string ISO untuk JSON
+        r_dict['formatted_datetime'] = dt_obj.strftime(f'%d %B %Y %H:%M {format_timezone_display(dt_obj)}')
         r_dict['notified_status'] = "Selesai" if r_dict['notified'] else "Akan Datang"
         reminders_list.append(r_dict)
     
-    # Serialisasi datetime object menjadi string ISO untuk JSON
-    for r in reminders_list:
-        r['datetime'] = r['datetime'].isoformat()
-    
     return jsonify(reminders_list), 200
 
-# API to delete a reminder
+# API untuk mendapatkan pengingat untuk bulan tertentu (digunakan oleh kalender)
+@app.route('/get_reminders_for_month', methods=['GET'])
+def get_reminders_for_month():
+    year = request.args.get('year', type=int)
+    month = request.args.get('month', type=int)
+
+    if not year or not month:
+        return jsonify({"error": "Missing year or month parameter"}), 400
+
+    # Hitung rentang tanggal untuk bulan tersebut
+    start_date = datetime(year, month, 1, 0, 0, 0, tzinfo=LOCAL_TIMEZONE)
+    # Tanggal akhir bulan, termasuk hari terakhir
+    if month == 12:
+        end_date = datetime(year + 1, 1, 1, 23, 59, 59, tzinfo=LOCAL_TIMEZONE) - timedelta(days=1)
+    else:
+        end_date = datetime(year, month + 1, 1, 23, 59, 59, tzinfo=LOCAL_TIMEZONE) - timedelta(days=1)
+    
+    reminders = query_db(
+        'SELECT id, event, datetime FROM reminders WHERE datetime BETWEEN ? AND ? ORDER BY datetime ASC',
+        (start_date.isoformat(), end_date.isoformat()) # Gunakan ISO format untuk query range
+    )
+    
+    reminders_data = []
+    for r in reminders:
+        r_dict = dict(r)
+        dt_obj = datetime.fromisoformat(r_dict['datetime'])
+        reminders_data.append({
+            'id': r_dict['id'],
+            'event': r_dict['event'],
+            'date': dt_obj.strftime('%Y-%m-%d') # Hanya tanggal untuk penandaan di kalender
+        })
+    
+    return jsonify(reminders_data), 200
+
+# API untuk menghapus pengingat
 @app.route('/delete_reminder/<int:reminder_id>', methods=['DELETE'])
 def delete_reminder_api(reminder_id):
-    result = update_db('DELETE FROM reminders WHERE id = ?', (reminder_id,))
-    if result: # update_db tidak mengembalikan rowcount, jadi kita asumsikan berhasil
+    # Dapatkan pengingat untuk memastikan ada sebelum menghapus
+    reminder_exists = query_db('SELECT id FROM reminders WHERE id = ?', (reminder_id,), one=True)
+    if reminder_exists:
+        update_db('DELETE FROM reminders WHERE id = ?', (reminder_id,))
         return jsonify({"success": True, "message": "Pengingat berhasil dihapus."}), 200
     else:
         return jsonify({"success": False, "message": "Pengingat tidak ditemukan."}), 404
@@ -392,28 +432,32 @@ def delete_reminder_api(reminder_id):
 
 # --- Scheduler untuk Mengecek Pengingat Jatuh Tempo ---
 def check_reminders_job():
+    """Tugas latar belakang untuk memeriksa dan memproses pengingat yang jatuh tempo."""
     with app.app_context(): # Pastikan scheduler berjalan dalam konteks aplikasi Flask
         now_local = datetime.now(LOCAL_TIMEZONE)
         
+        # Ambil pengingat yang belum dinotifikasi
         reminders = query_db('SELECT * FROM reminders WHERE notified = 0 ORDER BY datetime ASC')
 
         for reminder_data in reminders:
+            # Konversi string datetime dari DB ke objek datetime aware
             reminder_dt = datetime.fromisoformat(reminder_data['datetime'])
             
-            # Pastikan reminder_dt memiliki tzinfo jika now_local memilikinya
+            # Pastikan kedua datetime memiliki tzinfo untuk perbandingan yang benar
             if reminder_dt.tzinfo is None and now_local.tzinfo is not None:
-                reminder_dt = LOCAL_TIMEZONE.localize(reminder_dt)
+                reminder_dt = LOCAL_TIMEZONE.localize(reminder_dt.replace(tzinfo=None))
             elif reminder_dt.tzinfo is not None and now_local.tzinfo is None:
-                now_local = LOCAL_TIMEZONE.localize(now_local) # Pastikan now_local juga aware
-
+                now_local = LOCAL_TIMEZONE.localize(now_local.replace(tzinfo=None)) # Make now_local aware
+            
+            # Periksa apakah pengingat sudah jatuh tempo
             if now_local >= reminder_dt:
-                print(f"Mengirim notifikasi (simulasi) untuk: {reminder_data['event']} pada {reminder_dt}")
-                # Di lingkungan web, notifikasi PUSH memerlukan setup terpisah (Web Push API)
-                # Ini hanyalah output ke log server. Anda bisa mengintegrasikan layanan notifikasi di sini.
-
+                print(f"Mengirim notifikasi (simulasi di log) untuk: {reminder_data['event']} pada {reminder_dt}")
+                
+                # Jika pengingat tidak berulang, tandai sebagai dinotifikasi
                 if reminder_data['repeat_type'] == 'none':
                     update_db('UPDATE reminders SET notified = 1 WHERE id = ?', (reminder_data['id'],))
                 else:
+                    # Untuk pengingat berulang, hitung waktu berikutnya dan reset notified
                     next_datetime = reminder_dt
                     repeat_interval = reminder_data['repeat_interval']
 
@@ -422,7 +466,8 @@ def check_reminders_job():
                     elif reminder_data['repeat_type'] == 'monthly_interval':
                         next_datetime = add_months(next_datetime, repeat_interval)
                     
-                    while next_datetime <= now_local: # Maju cepat jika terlewat banyak
+                    # Maju cepat jika pengingat terlewat banyak kali (misal server mati lama)
+                    while next_datetime <= now_local:
                         if reminder_data['repeat_type'] == 'yearly':
                             next_datetime = next_datetime.replace(year=next_datetime.year + repeat_interval, tzinfo=next_datetime.tzinfo)
                         elif reminder_data['repeat_type'] == 'monthly_interval':
@@ -430,25 +475,21 @@ def check_reminders_job():
                     
                     update_db('UPDATE reminders SET datetime = ?, notified = 0 WHERE id = ?', 
                               (next_datetime.isoformat(), reminder_data['id']))
-        get_db().commit() # Commit setelah semua update selesai
-    
+        get_db().commit() # Commit perubahan setelah semua update selesai
+
 scheduler = BackgroundScheduler()
-# Jalankan setiap 30 detik (bisa diatur sesuai kebutuhan)
+# Jadwalkan check_reminders_job untuk berjalan setiap 30 detik
 scheduler.add_job(check_reminders_job, IntervalTrigger(seconds=30), id='check_reminders', replace_existing=True)
 
-# Mulai scheduler hanya jika aplikasi berjalan sebagai proses utama (misal oleh Gunicorn)
+# Mulai scheduler hanya jika aplikasi tidak dijalankan langsung (misal oleh Gunicorn)
 # Ini mencegah scheduler berjalan ganda jika ada multiple Gunicorn workers
 if __name__ != '__main__':
     scheduler.start()
-    print("Scheduler started in background.")
-
-@app.route('/health')
-def health_check():
-    return jsonify({"status": "ok", "scheduler_running": scheduler.running})
+    print("Scheduler started in background for production.")
 
 # --- Main Run Block ---
 if __name__ == '__main__':
-    # Pastikan database terinisialisasi jika dijalankan lokal
+    # Pastikan database terinisialisasi saat pengembangan lokal
     if not os.path.exists(DATABASE):
         from database import init_db
         init_db()
@@ -457,5 +498,6 @@ if __name__ == '__main__':
     scheduler.start()
     print("Scheduler started for local development.")
     
+    # Dapatkan port dari variabel lingkungan (dari Railway) atau default ke 5000
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=True, host='0.0.0.0', port=port)
