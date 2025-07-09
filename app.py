@@ -20,17 +20,17 @@ app = Flask(__name__,
 DATABASE = 'reminders.db'
 
 # --- Inisialisasi SpaCy di luar fungsi request untuk efisiensi ---
-# Coba muat model bahasa Indonesia, fallback ke Inggris jika tidak ada
+# Coba muat model bahasa Inggris dulu karena lebih stabil
 try:
-    nlp = spacy.load("id_core_news_sm")
-    print("SpaCy model 'id_core_news_sm' loaded successfully.")
+    nlp = spacy.load("en_core_web_sm")
+    print("SpaCy model 'en_core_web_sm' loaded successfully.")
 except OSError:
-    print("SpaCy model 'id_core_news_sm' not found, trying 'en_core_web_sm'.")
+    print("SpaCy model 'en_core_web_sm' not found. Trying 'id_core_news_sm' (if available).")
     try:
-        nlp = spacy.load("en_core_web_sm")
-        print("SpaCy model 'en_core_web_sm' loaded successfully.")
+        nlp = spacy.load("id_core_news_sm") # Coba model ID sebagai fallback
+        print("SpaCy model 'id_core_news_sm' loaded successfully.")
     except OSError:
-        print("No SpaCy model found. Text parsing might be less accurate.")
+        print("No SpaCy model found (neither en_core_web_sm nor id_core_news_sm). Text parsing will rely on regex only.")
         nlp = None # Atur nlp ke None jika tidak ada model yang dimuat
 
 
@@ -74,9 +74,10 @@ TIMEZONE_MAP = {
     "est": "America/New_York", "pst": "America/Los_Angeles", "gmt": "Etc/GMT",
     "utc": "Etc/UTC", "gmt+7": "Etc/GMT-7", "gmt-7": "Etc/GMT+7"
 }
-LOCAL_TIMEZONE = pytz.timezone(os.environ.get('TZ', 'Asia/Jakarta'))
+LOCAL_TIMEZONE = pytz.timezone(os.environ.get('TZ', 'Asia/Jakarta')) # Default WIB
 
 def add_months(sourcedate, months):
+    """Menambahkan bulan ke objek datetime, menangani akhir bulan dengan benar."""
     month = sourcedate.month + months
     year = sourcedate.year + (month - 1) // 12
     month = (month - 1) % 12 + 1
@@ -84,6 +85,7 @@ def add_months(sourcedate, months):
     return sourcedate.replace(year=year, month=month, day=day, tzinfo=sourcedate.tzinfo)
 
 def format_timezone_display(dt_object):
+    """Membantu memformat tampilan zona waktu agar lebih ringkas."""
     tz_name_full = dt_object.tzname()
     if tz_name_full:
         if "Western Indonesia Standard Time" in tz_name_full:
@@ -95,14 +97,15 @@ def format_timezone_display(dt_object):
         return ""
     return ""
 
-def parse_single_schedule_fragment(text_fragment, now_local):
+def parse_single_schedule_fragment(text_fragment, now_local_context):
     """
-    Mencoba menguraikan satu pengingat dari fragmen teks menggunakan SpaCy dan regex.
+    Mencoba menguraikan satu pengingat dari fragmen teks menggunakan SpaCy (jika ada) dan regex.
+    `now_local_context` digunakan untuk tanggal/waktu relatif.
     """
+    original_text = text_fragment
     original_text_lower = text_fragment.lower()
-    processed_text = text_fragment # Pertahankan casing asli untuk ekstraksi metadata jika perlu
     
-    scheduled_datetime_aware = now_local
+    scheduled_datetime_aware = now_local_context
     target_tz = LOCAL_TIMEZONE
     tz_matched = False
     
@@ -114,85 +117,104 @@ def parse_single_schedule_fragment(text_fragment, now_local):
         tz_abbr = tz_match.group(1).lower()
         try:
             target_tz = pytz.timezone(TIMEZONE_MAP[tz_abbr])
-            processed_text = re.sub(tz_pattern, '', processed_text, flags=re.IGNORECASE).strip()
+            original_text = re.sub(tz_pattern, '', original_text, flags=re.IGNORECASE).strip()
             tz_matched = True
         except pytz.UnknownTimeZoneError:
             pass
 
-    # --- 2. Ekstraksi Tanggal dan Waktu menggunakan SpaCy (Prioritas Tinggi) ---
-    spacy_date = None
-    spacy_time = None
-    event_from_spacy = None # Untuk menangkap event utama
+    # --- 2. Ekstraksi Tanggal dan Waktu menggunakan SpaCy & Regex ---
+    spacy_date_found = False
+    spacy_time_found = False
+    
+    temp_text_for_spacy_regex = original_text # Gunakan salinan untuk manipulasi tanpa mengubah original_text
 
     if nlp:
-        doc = nlp(processed_text)
+        doc = nlp(temp_text_for_spacy_regex)
         for ent in doc.ents:
-            if ent.label_ in ["DATE", "TIME"]: # SpaCy mengenali DATE/TIME
+            if ent.label_ in ["DATE", "TIME"]:
                 try:
-                    if ent.label_ == "DATE":
-                        # Coba parse tanggal. Tanggal relatif (today, tomorrow) bisa jadi masalah di sini.
-                        # Ini perlu penanganan lebih lanjut jika ingin presisi seperti regex sebelumnya.
-                        # Untuk sekarang, akan mengandalkan SpaCy atau fallback regex.
-                        temp_date = datetime.strptime(ent.text, '%Y-%m-%d').date() # Asumsi format standar
-                        spacy_date = temp_date
-                    elif ent.label_ == "TIME":
-                        temp_time = datetime.strptime(ent.text, '%H:%M').time() # Asumsi format standar
-                        spacy_time = temp_time
-                    
-                    # Jika entitas ditemukan, hapus dari processed_text untuk ekstraksi event/metadata
-                    processed_text = processed_text.replace(ent.text, '').strip()
+                    if ent.label_ == "DATE" and not spacy_date_found:
+                        # SpaCy tanggal bisa kompleks. Coba parsing dengan dateutil atau asumsi.
+                        # Untuk sederhana, mari kita coba format yang mungkin dikenali Python.
+                        # Jika Anda ingin ini lebih cerdas, butuh pustaka seperti `dateparser` atau `parsedatetime`.
+                        # Untuk saat ini, kita akan biarkan regex di bawah menangani sebagian besar tanggal relatif/spesifik.
+                        pass # Biarkan regex di bawah menangani date entities.
+                    elif ent.label_ == "TIME" and not spacy_time_found:
+                        # SpaCy bisa mengenali "17:00", "5 PM", "ten o'clock"
+                        # Coba parse waktu langsung dari ent.text
+                        time_str_raw = ent.text.lower().replace(" ", "").replace("o'clock", ":00")
+                        # Basic handling for AM/PM if SpaCy gives it.
+                        if "pm" in time_str_raw and "12:" not in time_str_raw:
+                            hour_part = int(time_str_raw.split(':')[0])
+                            if hour_part < 12:
+                                hour_part += 12
+                            time_str_raw = str(hour_part) + time_str_raw[time_str_raw.find(':'):].replace('pm', '')
+                        elif "am" in time_str_raw and "12:" in time_str_raw:
+                            hour_part = int(time_str_raw.split(':')[0])
+                            if hour_part == 12:
+                                hour_part = 0
+                            time_str_raw = str(hour_part) + time_str_raw[time_str_raw.find(':'):].replace('am', '')
+                        elif "am" in time_str_raw:
+                            time_str_raw = time_str_raw.replace('am', '')
+
+                        if ':' in time_str_raw:
+                            hour, minute = map(int, time_str_raw.split(':'))
+                        else: # Mungkin hanya "5" untuk "5 o'clock"
+                            hour = int(time_str_raw)
+                            minute = 0
+
+                        if 0 <= hour <= 23 and 0 <= minute <= 59:
+                            scheduled_datetime_aware = scheduled_datetime_aware.replace(hour=hour, minute=minute, second=0, microsecond=0, tzinfo=scheduled_datetime_aware.tzinfo)
+                            temp_text_for_spacy_regex = temp_text_for_spacy_regex.replace(ent.text, '').strip() # Hapus entitas yang sudah diproses
+                            spacy_time_found = True
+                        
                 except ValueError:
                     pass
-            # Coba ekstrak event utama jika ada
-            # Ini sangat tergantung pada model SpaCy dan jenis entitas yang dikenali
-            # Contoh: jika ada entitas kustom 'ACTIVITY' atau 'TASK'
-            # if ent.label_ == "TASK" or ent.label_ == "ACTIVITY":
-            #     event_from_spacy = ent.text.strip()
-            #     processed_text = processed_text.replace(ent.text, '').strip()
 
-    # --- Fallback/Pelengkap untuk Tanggal dan Waktu (Regex yang sudah ada) ---
-    if not spacy_date:
-        # Ekstraksi keyword tanggal (hari ini, besok, dll.)
-        date_keywords_map = {
-            "hari ini": now_local.date(), "besok": (now_local + timedelta(days=1)).date(),
-            "lusa": (now_local + timedelta(days=2)).date(), "minggu depan": (now_local + timedelta(weeks=1)).date(),
-            "bulan depan": (now_local.replace(day=1) + timedelta(days=32)).replace(day=now_local.day).date()
-        }
-        for keyword, date_obj in date_keywords_map.items():
-            if keyword in original_text_lower:
-                scheduled_datetime_aware = scheduled_datetime_aware.replace(year=date_obj.year, month=date_obj.month, day=date_obj.day, tzinfo=scheduled_datetime_aware.tzinfo)
-                processed_text = re.sub(re.escape(keyword), '', processed_text, flags=re.IGNORECASE).strip()
-                break
+    # Fallback/Pelengkap untuk Tanggal dan Waktu (Regex yang sudah ada)
+    # Ini akan berjalan jika SpaCy tidak menemukan, atau untuk pola yang lebih spesifik
+    # seperti "minggu depan senin" atau "setelah subuh"
+    
+    # Ekstraksi relatif waktu (dalam jam/menit lagi)
+    relative_time_pattern = r'\b(dalam\s+)?(\d+)\s*(jam|menit)\s*(lagi|ke\s+depan)?\b'
+    relative_time_match = re.search(relative_time_pattern, original_text_lower, re.IGNORECASE)
+    if relative_time_match:
+        value = int(relative_time_match.group(2))
+        unit = relative_time_match.group(3)
+        if unit == "jam":
+            scheduled_datetime_aware = now_local_context + timedelta(hours=value)
+        elif unit == "menit":
+            scheduled_datetime_aware = now_local_context + timedelta(minutes=value)
+        temp_text_for_spacy_regex = re.sub(relative_time_pattern, '', temp_text_for_spacy_regex, flags=re.IGNORECASE).strip()
         
-        # Ekstraksi hari dalam seminggu
-        day_of_week_map = {
-            "senin": 0, "selasa": 1, "rabu": 2, "kamis": 3, "jumat": 4, "sabtu": 5, "minggu": 6
-        }
-        for day_name, day_num in day_of_week_map.items():
-            if day_name in original_text_lower:
-                days_ahead = (day_num - now_local.weekday() + 7) % 7
-                if days_ahead == 0 and scheduled_datetime_aware.date() == now_local.date() and scheduled_datetime_aware.time() < now_local.time():
-                    days_ahead = 7 # Jika hari ini sudah lewat, maju ke minggu depan
-                elif days_ahead == 0 and scheduled_datetime_aware.date() == now_local.date() and scheduled_datetime_aware.time() >= now_local.time():
-                    pass # Hari ini belum lewat
-                elif days_ahead == 0 and scheduled_datetime_aware.date() != now_local.date():
-                    pass # Jika sudah ditentukan tanggal lain (besok, lusa), jangan reset
-                elif days_ahead == 0: # Ini berarti hari yang sama minggu depan (jika belum maju)
-                     days_ahead = 7
-                
-                target_date = (now_local.date() if scheduled_datetime_aware.date() == now_local.date() else scheduled_datetime_aware.date()) + timedelta(days=days_ahead)
-                scheduled_datetime_aware = scheduled_datetime_aware.replace(year=target_date.year, month=target_date.month, day=target_date.day, tzinfo=scheduled_datetime_aware.tzinfo)
-                processed_text = re.sub(re.escape(day_name), '', processed_text, flags=re.IGNORECASE).strip()
-                break
-
-    # Jika SpaCy tidak mendapatkan waktu, coba regex
-    if not spacy_time:
-        time_pattern = r'\b(\d{1,2}([\.:]\d{2})?)\s*(pagi|siang|sore|malam|am|pm)?\b'
-        time_match = re.search(time_pattern, original_text_lower, re.IGNORECASE)
-        if time_match:
+    # Ekstraksi waktu sholat
+    waktu_sholat_map = {
+        "subuh": "05:00", "dzuhur": "12:00", "ashar": "15:00", "maghrib": "18:00", "isya": "19:30"
+    }
+    for sholat_name, sholat_time_str in waktu_sholat_map.items():
+        if sholat_name in original_text_lower:
             try:
-                time_str_raw = time_match.group(1)
-                ampm_str = (time_match.group(3) or '').lower()
+                hour, minute = map(int, sholat_time_str.split(':'))
+                temp_time = scheduled_datetime_aware.replace(hour=hour, minute=minute, second=0, microsecond=0, tzinfo=scheduled_datetime_aware.tzinfo)
+                if temp_time < now_local_context and temp_time.date() == scheduled_datetime_aware.date():
+                    temp_time += timedelta(days=1)
+                scheduled_datetime_aware = temp_time
+                temp_text_for_spacy_regex = re.sub(re.escape(sholat_name), '', temp_text_for_spacy_regex, flags=re.IGNORECASE).strip()
+                if f"setelah {sholat_name}" in original_text_lower: # Periksa di original text untuk menghapus
+                    scheduled_datetime_aware += timedelta(minutes=30)
+                    temp_text_for_spacy_regex = temp_text_for_spacy_regex.replace(f"setelah {sholat_name}", "").strip()
+                break
+            except ValueError:
+                pass
+            
+    # Ekstraksi waktu spesifik (jam:menit) - jika SpaCy tidak menangkapnya
+    if not spacy_time_found:
+        time_pattern_regex = r'\b(jam |pukul )?(\d{1,2}([\.:]\d{2})?)\s*(pagi|siang|sore|malam|am|pm)?\b'
+        time_match_regex = re.search(time_pattern_regex, original_text_lower, re.IGNORECASE)
+        if time_match_regex:
+            try:
+                time_str_raw = time_match_regex.group(2)
+                ampm_str = (time_match_regex.group(4) or '').lower()
                 hour_extracted, minute_extracted = (map(int, time_str_raw.split(':')) if ':' in time_str_raw else
                                                     map(int, time_str_raw.split('.')) if '.' in time_str_raw else
                                                     (int(time_str_raw), 0))
@@ -209,19 +231,80 @@ def parse_single_schedule_fragment(text_fragment, now_local):
                 if not (0 <= hour_extracted <= 23 and 0 <= minute_extracted <= 59):
                     raise ValueError("Invalid time")
                 
-                scheduled_datetime_aware = scheduled_datetime_aware.replace(hour=hour_extracted, minute=minute_extracted, second=0, microsecond=0, tzinfo=scheduled_datetime_aware.tzinfo)
-                processed_text = re.sub(time_pattern, '', processed_text, flags=re.IGNORECASE).strip()
+                temp_datetime = scheduled_datetime_aware.replace(hour=hour_extracted, minute=minute_extracted, second=0, microsecond=0, tzinfo=scheduled_datetime_aware.tzinfo)
+                if temp_datetime < now_local_context and temp_datetime.date() == scheduled_datetime_aware.date():
+                    temp_datetime += timedelta(days=1)
+                scheduled_datetime_aware = temp_datetime
+                temp_text_for_spacy_regex = re.sub(time_pattern_regex, '', temp_text_for_spacy_regex, flags=re.IGNORECASE).strip()
             except (ValueError, TypeError):
                 pass
     
     # Default ke 9 pagi jika tidak ada waktu yang terdeteksi
-    if scheduled_datetime_aware.time() == now_local.time() and scheduled_datetime_aware.date() == now_local.date():
+    if scheduled_datetime_aware.time() == now_local_context.time() and scheduled_datetime_aware.date() == now_local_context.date():
         default_hour, default_minute = 9, 0
         temp_time = scheduled_datetime_aware.replace(hour=default_hour, minute=default_minute, second=0, microsecond=0, tzinfo=scheduled_datetime_aware.tzinfo)
-        if temp_time < now_local:
+        if temp_time < now_local_context:
             temp_time += timedelta(days=1)
         scheduled_datetime_aware = temp_time
 
+
+    # Ekstraksi keyword tanggal (hari ini, besok, dll.)
+    date_keywords_map = {
+        "hari ini": now_local_context.date(), "besok": (now_local_context + timedelta(days=1)).date(),
+        "lusa": (now_local_context + timedelta(days=2)).date(), "minggu depan": (now_local_context + timedelta(weeks=1)).date(),
+        "bulan depan": (now_local_context.replace(day=1) + timedelta(days=32)).replace(day=now_local_context.day).date()
+    }
+    for keyword, date_obj in date_keywords_map.items():
+        if keyword in original_text_lower:
+            scheduled_datetime_aware = scheduled_datetime_aware.replace(year=date_obj.year, month=date_obj.month, day=date_obj.day, tzinfo=scheduled_datetime_aware.tzinfo)
+            temp_text_for_spacy_regex = re.sub(re.escape(keyword), '', temp_text_for_spacy_regex, flags=re.IGNORECASE).strip()
+            break
+        
+    # Ekstraksi hari dalam seminggu
+    day_of_week_map = {
+        "senin": 0, "selasa": 1, "rabu": 2, "kamis": 3, "jumat": 4, "sabtu": 5, "minggu": 6
+    }
+    for day_name, day_num in day_of_week_map.items():
+        if day_name in original_text_lower:
+            days_ahead = (day_num - now_local_context.weekday() + 7) % 7
+            if days_ahead == 0 and scheduled_datetime_aware.date() == now_local_context.date() and scheduled_datetime_aware.time() < now_local_context.time():
+                days_ahead = 7
+            elif days_ahead == 0 and scheduled_datetime_aware.date() == now_local_context.date() and scheduled_datetime_aware.time() >= now_local_context.time():
+                pass
+            elif days_ahead == 0 and scheduled_datetime_aware.date() != now_local_context.date():
+                pass
+            elif days_ahead == 0:
+                 days_ahead = 7
+            
+            target_date = (now_local_context.date() if scheduled_datetime_aware.date() == now_local_context.date() else scheduled_datetime_aware.date()) + timedelta(days=days_ahead)
+            scheduled_datetime_aware = scheduled_datetime_aware.replace(year=target_date.year, month=target_date.month, day=target_date.day, tzinfo=scheduled_datetime_aware.tzinfo)
+            temp_text_for_spacy_regex = re.sub(re.escape(day_name), '', temp_text_for_spacy_regex, flags=re.IGNORECASE).strip()
+            break
+
+    # Ekstraksi tanggal spesifik (DD Month YYYY atau DD/MM/YYYY)
+    date_pattern_regex = r'\b(\d{1,2}) (januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember) (\d{4})\b|\b(\d{1,2})/(\d{1,2})/(\d{4})\b'
+    date_match_regex = re.search(date_pattern_regex, original_text_lower, re.IGNORECASE)
+    if date_match_regex:
+        try:
+            parsed_date = None
+            if date_match_regex.group(2):
+                day_str, month_name, year_str = date_match_regex.group(1, 2, 3)
+                bulan_map = {
+                    "januari": 1, "februari": 2, "maret": 3, "april": 4, "mei": 5, "juni": 6,
+                    "juli": 7, "agustus": 8, "september": 9, "oktober": 10, "november": 11, "desember": 12
+                }
+                month_num = bulan_map.get(month_name.lower())
+                if month_num:
+                    parsed_date = datetime(int(year_str), month_num, int(day_str)).date()
+            elif date_match_regex.group(4):
+                day_str, month_str, year_str = date_match_regex.group(4, 5, 6)
+                parsed_date = datetime(int(year_str), int(month_str), int(day_str)).date()
+
+            if parsed_date:
+                scheduled_datetime_aware = scheduled_datetime_aware.replace(year=parsed_date.year, month=parsed_date.month, day=parsed_date.day, tzinfo=scheduled_datetime_aware.tzinfo)
+                temp_text_for_spacy_regex = re.sub(date_pattern_regex, '', temp_text_for_spacy_regex, flags=re.IGNORECASE).strip()
+        except (ValueError, TypeError):
+            pass
 
     # --- 3. Ekstraksi Pengulangan & Metadata Terstruktur ---
     repeat_type = "none"
@@ -233,90 +316,106 @@ def parse_single_schedule_fragment(text_fragment, now_local):
     if monthly_repeat_match:
         repeat_type = "monthly_interval"
         repeat_interval = int(monthly_repeat_match.group(1) or monthly_repeat_match.group(2))
-        processed_text = re.sub(monthly_repeat_pattern, '', processed_text, flags=re.IGNORECASE).strip()
+        temp_text_for_spacy_regex = re.sub(monthly_repeat_pattern, '', temp_text_for_spacy_regex, flags=re.IGNORECASE).strip()
 
     yearly_repeat_pattern_explicit = r'(?:setiap|tiap)\s*(\d+)\s*tahun|(?:(\d+)\s*tahun\s*kedepan)'
     yearly_repeat_match_explicit = re.search(yearly_repeat_pattern_explicit, original_text_lower)
     if yearly_repeat_match_explicit:
         repeat_type = "yearly"
         repeat_interval = int(yearly_repeat_match_explicit.group(1) or yearly_repeat_match_explicit.group(2))
-        processed_text = re.sub(yearly_repeat_pattern_explicit, '', processed_text, flags=re.IGNORECASE).strip()
+        temp_text_for_spacy_regex = re.sub(yearly_repeat_pattern_explicit, '', temp_text_for_spacy_regex, flags=re.IGNORECASE).strip()
     elif "setiap tahun" in original_text_lower or "tiap tahun" in original_text_lower:
         repeat_type = "yearly"
         repeat_interval = 1 
-        processed_text = re.sub(r'setiap tahun|tiap tahun', '', processed_text, flags=re.IGNORECASE).strip()
+        temp_text_for_spacy_regex = re.sub(r'setiap tahun|tiap tahun', '', temp_text_for_spacy_regex, flags=re.IGNORECASE).strip()
     
     # NEW: Pola pengulangan Harian/Mingguan
     if "daily" in original_text_lower or "setiap hari" in original_text_lower or "tiap hari" in original_text_lower:
         repeat_type = "daily"
         repeat_interval = 1
-        processed_text = re.sub(r'daily|setiap hari|tiap hari', '', processed_text, flags=re.IGNORECASE).strip()
-    elif "mon/wed/fri" in original_text_lower: # Contoh spesifik
+        temp_text_for_spacy_regex = re.sub(r'daily|setiap hari|tiap hari', '', temp_text_for_spacy_regex, flags=re.IGNORECASE).strip()
+    # Contoh Mon/Wed/Fri (ini akan disimpan di metadata)
+    mon_wed_fri_match = re.search(r'mon/wed/fri', original_text_lower, re.IGNORECASE)
+    if mon_wed_fri_match:
         repeat_type = "weekly_custom" # Ini perlu logika lebih kompleks di scheduler
         metadata["repeat_days"] = "Mon,Wed,Fri"
-        processed_text = processed_text.replace("mon/wed/fri", "").strip()
-    elif "sundays" in original_text_lower or "setiap minggu" in original_text_lower:
-        repeat_type = "weekly"
-        repeat_interval = day_of_week_map["minggu"] # Simpan hari target
-        processed_text = re.sub(r'sundays|setiap minggu', '', processed_text, flags=re.IGNORECASE).strip()
-    elif "tuesdays" in original_text_lower:
-        repeat_type = "weekly"
-        repeat_interval = day_of_week_map["selasa"] # Simpan hari target
-        processed_text = processed_text.replace("tuesdays", "").strip()
-
-
+        temp_text_for_spacy_regex = temp_text_for_spacy_regex.replace(mon_wed_fri_match.group(0), "").strip()
+    # Contoh Sundays, Tuesdays
+    for day_name_key, day_num_val in day_of_week_map.items():
+        if f"{day_name_key}s" in original_text_lower: # For "Sundays", "Tuesdays"
+            repeat_type = "weekly"
+            repeat_interval = day_num_val # Store the weekday number
+            temp_text_for_spacy_regex = temp_text_for_spacy_regex.replace(f"{day_name_key}s", "").strip()
+            break
+        
     # Ekstraksi Metadata (menggunakan regex dan membersihkan teks)
     metadata = {}
     
     # Pola untuk metadata spesifik
     metadata_patterns = {
-        "notes": r'(?:notes|catatan):\s*["“](.*?)[”"]|(?:notes|catatan):\s*(.+?)(?=\s*(?:mood:|suggestion:|saran:|$))',
+        "notes": r'(?:notes|catatan):\s*["“](.*?)[”"]|(?:notes|catatan):\s*(.+?)(?=\s*(?:mood:|suasana hati:|suggestion:|saran:|$))',
         "mood": r'(?:mood|suasana hati):\s*([^\s]+)(?=\s*(?:notes:|catatan:|suggestion:|saran:|$))',
         "suggestion": r'(?:suggestion|saran):\s*(.+)',
-        # Pola untuk aktivitas/item yang Anda sebutkan
-        "activity_type": r'(gym|office day|online course|reading|groceries)', # Kata kunci untuk jenis aktivitas utama
-        "favorite_meals": r'(favorite meals|makanan favorit):\s*(.+)',
-        "coffee_preference": r'(coffee|kopi):\s*(.+)'
+        "favorite_meals": r'(?:favorite meals|makanan favorit):\s*(.+)',
+        "coffee_preference": r'(?:coffee|kopi):\s*(.+)'
     }
 
-    temp_processed_text = processed_text # Salinan untuk ekstraksi metadata
+    temp_processed_text_for_metadata = temp_text_for_spacy_regex # Salinan untuk ekstraksi metadata
     for key, pattern in metadata_patterns.items():
-        match = re.search(pattern, temp_processed_text, re.IGNORECASE)
+        match = re.search(pattern, temp_processed_text_for_metadata, re.IGNORECASE)
         if match:
             # Handle groups for different patterns
-            if key in ["notes", "favorite_meals", "coffee_preference", "suggestion"]: # These might have long content
+            if key in ["notes", "favorite_meals", "coffee_preference", "suggestion"]:
                 content = (match.group(1) or match.group(2) or match.group(0).split(':', 1)[1]).strip('"“’”').strip()
             elif key == "mood":
                 content = match.group(1).strip()
-            elif key == "activity_type":
-                content = match.group(1).strip()
             else:
-                content = match.group(0).strip() # Fallback for unmatched groups
+                content = match.group(0).strip()
             
             metadata[key] = content
-            temp_processed_text = re.sub(pattern, '', temp_processed_text, flags=re.IGNORECASE).strip()
+            temp_processed_text_for_metadata = re.sub(pattern, '', temp_processed_text_for_metadata, flags=re.IGNORECASE).strip()
             
-    # Bersihkan sisa processed_text setelah semua metadata diekstrak
-    # Sisa ini akan menjadi dasar untuk event_title jika belum ditentukan oleh SpaCy
-    clean_processed_text = re.sub(r'\s+', ' ', temp_processed_text).strip()
+    # Bersihkan sisa temp_processed_text_for_metadata setelah semua metadata diekstrak
+    # Sisa ini akan menjadi dasar untuk event_title jika belum ditentukan oleh SpaCy atau pola aktivitas
+    clean_remaining_text = re.sub(r'\s+', ' ', temp_processed_text_for_metadata).strip()
+
 
     # Tentukan event_title
     event_title = "Pengingat"
-    if event_from_spacy: # Prioritaskan event dari SpaCy jika ada
-        event_title = event_from_spacy
-    elif 'activity_type' in metadata: # Prioritaskan dari metadata jika ada
-        event_title = metadata['activity_type'].capitalize()
-    elif clean_processed_text: # Fallback ke sisa teks
-        event_title = clean_processed_text.split(' ')[0].capitalize() # Ambil kata pertama
+    
+    # Prioritaskan event dari SpaCy
+    event_from_spacy = None
+    if nlp:
+        doc = nlp(original_text) # Gunakan original_text untuk identifikasi event yang lebih luas
+        for ent in doc.ents:
+            if ent.label_ in ["EVENT", "TASK", "ACTIVITY", "PRODUCT", "WORK_OF_ART", "ORG", "PERSON"]: # Coba entitas yang mungkin jadi event
+                # Filter entitas yang mungkin terlalu umum atau sudah ditangani waktu/tanggal
+                if ent.label_ not in ["DATE", "TIME"] and not re.search(r'\d', ent.text): # Hindari angka/waktu
+                    if len(ent.text.split()) > 1 and ent.text.lower() in original_text_lower: # Prefer multi-word entities
+                        event_from_spacy = ent.text.strip()
+                        break # Ambil yang pertama
+                    elif not event_from_spacy and len(ent.text.split()) == 1: # Fallback ke single-word if no multi-word
+                         event_from_spacy = ent.text.strip()
 
+
+    if event_from_spacy:
+        event_title = event_from_spacy.capitalize()
+    else:
+        # Fallback ke pola aktivitas umum dari input asli
+        activity_type_match = re.search(r'(gym|online course|reading|groceries|standup|rapat|class|meeting)', original_text_lower, re.IGNORECASE)
+        if activity_type_match:
+            event_title = activity_type_match.group(1).capitalize()
+        elif clean_remaining_text: # Fallback ke sisa teks setelah ekstraksi
+            event_title = clean_remaining_text.split(' ')[0].capitalize() # Ambil kata pertama
+    
     # Pastikan event_title tidak kosong atau hanya angka
     if not event_title or re.match(r'^\d+$', event_title):
         event_title = "Pengingat"
-        # Jika event title masih "Pengingat" dan ada clean_processed_text yang signifikan, tambahkan ke metadata
-        if clean_processed_text and clean_processed_text != "pengingat":
-            metadata["description"] = clean_processed_text # Simpan sebagai deskripsi umum di metadata
+        if clean_remaining_text and clean_remaining_text != "pengingat": # Jika event "Pengingat" tapi ada sisa teks, simpan di metadata
+            metadata["description"] = clean_remaining_text
 
-    # --- 4. Validasi Akhir dan Konversi Zona Waktu ---
+
+    # --- 5. Validasi Akhir dan Konversi Zona Waktu ---
     tolerance = timedelta(seconds=2)
     
     if tz_matched: 
@@ -326,12 +425,9 @@ def parse_single_schedule_fragment(text_fragment, now_local):
     else:
         scheduled_datetime_final = scheduled_datetime_aware 
 
-    # Ini penting: jika parsing tanggal/waktu gagal atau tidak menemukan apa-apa,
-    # dan waktu default tidak maju, jangan buat pengingat
-    if scheduled_datetime_final < now_local - tolerance:
+    if scheduled_datetime_final < now_local_context - tolerance:
         return None
     
-    # Final check: is there actually meaningful data?
     if scheduled_datetime_final:
         return {
             "event": event_title,
@@ -346,22 +442,23 @@ def parse_single_schedule_fragment(text_fragment, now_local):
 def extract_multiple_schedules(full_text):
     """
     Menguraikan beberapa pengingat dari satu blok teks input.
-    Mencoba memecah teks berdasarkan pola waktu/tanggal atau baris.
+    Memecah teks berdasarkan baris dan mencoba menguraikan setiap fragmen.
     """
     now_local = datetime.now(LOCAL_TIMEZONE)
-    # Ini adalah regex yang sangat kompleks, mencoba menemukan setiap instance waktu atau tanggal
-    # agar kita bisa memecah teks berdasarkan itu.
-    # Namun, ini akan sulit. Pendekatan yang lebih aman adalah memecah per baris.
+    
+    # Pecah teks input per baris
     lines = [line.strip() for line in full_text.split('\n') if line.strip()]
     
     parsed_reminders = []
 
     for line_text in lines:
+        # Panggil parse_single_schedule_fragment untuk setiap baris
         result = parse_single_schedule_fragment(line_text, now_local)
         if result:
             parsed_reminders.append(result)
             
-    # Jika tidak ada pengingat yang ditemukan per baris, coba parsing seluruh teks sebagai satu event
+    # Fallback: Jika tidak ada pengingat yang ditemukan dari baris individual,
+    # coba parsing seluruh teks sebagai satu event utama.
     if not parsed_reminders and lines:
         single_result = parse_single_schedule_fragment(full_text, now_local)
         if single_result:
@@ -481,7 +578,7 @@ def delete_reminder_api(reminder_id):
     else:
         return jsonify({"success": False, "message": "Pengingat tidak ditemukan atau Anda tidak memiliki izin untuk menghapusnya."}), 404
 
-# --- Scheduler untuk Mengecek Pengingat Jatuh Tempo (perlu adaptasi untuk pengulangan baru) ---
+# --- Scheduler untuk Mengecek Pengingat Jatuh Tempo ---
 def check_reminders_job():
     with app.app_context():
         now_local = datetime.now(LOCAL_TIMEZONE)
@@ -503,7 +600,7 @@ def check_reminders_job():
                     update_db('UPDATE reminders SET notified = 1 WHERE id = ?', (reminder_data['id'],))
                 else:
                     next_datetime = reminder_dt
-                    repeat_interval = reminder_data['repeat_interval'] # Untuk yearly/monthly
+                    repeat_interval = reminder_data['repeat_interval']
                     
                     if reminder_data['repeat_type'] == 'yearly':
                         next_datetime = next_datetime.replace(year=next_datetime.year + repeat_interval, tzinfo=next_datetime.tzinfo)
@@ -511,23 +608,54 @@ def check_reminders_job():
                         next_datetime = add_months(next_datetime, repeat_interval)
                     elif reminder_data['repeat_type'] == 'daily':
                         next_datetime += timedelta(days=1)
-                    elif reminder_data['repeat_type'] == 'weekly': # Untuk pengulangan mingguan spesifik hari
-                        # repeat_interval di sini adalah weekday number (0-6)
-                        current_day_of_week = next_datetime.weekday() # 0=Senin, 6=Minggu
-                        target_day_of_week = reminder_data['repeat_interval'] # Target day number (e.g., 6 for Sunday)
+                    elif reminder_data['repeat_type'] == 'weekly':
+                        # Untuk weekly, repeat_interval menyimpan weekday number (0=Senin, 6=Minggu)
+                        current_day_of_week = next_datetime.weekday()
+                        target_day_of_week = repeat_interval
                         
                         days_to_advance = (target_day_of_week - current_day_of_week + 7) % 7
-                        if days_to_advance == 0: # Jika hari ini adalah hari target, majukan 1 minggu
-                            days_to_advance = 7
-                        next_datetime += timedelta(days=days_to_advance)
-                    elif reminder_data['repeat_type'] == 'weekly_custom': # Contoh Mon/Wed/Fri
-                        # Ini adalah yang paling kompleks, memerlukan array hari di metadata
-                        # Untuk demo, ini akan jadi PRT (perlu waktu)
-                        # Anda bisa membiarkannya sebagai 'none' atau mengubah logika ini.
-                        # Untuk saat ini, asumsikan next_datetime += timedelta(days=7) sebagai fallback
-                        print("WARNING: 'weekly_custom' repeat type needs advanced logic for next_datetime calculation.")
-                        next_datetime += timedelta(days=7) # Default maju 1 minggu
+                        if days_to_advance == 0: # Jika sudah hari target tapi waktu sudah lewat, maju 1 minggu
+                            if next_datetime.time() <= now_local.time(): # Periksa juga waktu
+                                days_to_advance = 7
+                            else: # Hari ini tapi waktu belum lewat
+                                days_to_advance = 0
                         
+                        next_datetime += timedelta(days=days_to_advance)
+
+                    elif reminder_data['repeat_type'] == 'weekly_custom':
+                        # Ini adalah yang paling kompleks, memerlukan array hari di metadata
+                        # Ambil hari-hari berulang dari metadata
+                        metadata_obj = json.loads(reminder_data['metadata'])
+                        repeat_days_str = metadata_obj.get("repeat_days")
+                        if repeat_days_str:
+                            day_map_str_to_int = {"mon":0, "tue":1, "wed":2, "thu":3, "fri":4, "sat":5, "sun":6}
+                            target_weekdays = sorted([day_map_str_to_int[d.lower()] for d in repeat_days_str.split(',') if d.lower() in day_map_str_to_int])
+                            
+                            if target_weekdays:
+                                current_weekday = next_datetime.weekday()
+                                found_next_day = False
+                                
+                                # Cari hari berikutnya dalam minggu yang sama atau minggu depan
+                                for target_day in target_weekdays:
+                                    if target_day > current_weekday:
+                                        days_to_advance = target_day - current_weekday
+                                        next_datetime += timedelta(days=days_to_advance)
+                                        found_next_day = True
+                                        break
+                                
+                                if not found_next_day: # Maju ke minggu depan, ambil hari pertama dari daftar
+                                    days_to_advance = (target_weekdays[0] - current_weekday + 7) % 7
+                                    next_datetime += timedelta(days=days_to_advance)
+                                
+                                # Jika waktu pada hari berikutnya sudah lewat hari ini, majukan seminggu lagi
+                                if next_datetime.date() == now_local.date() and next_datetime.time() < now_local.time():
+                                    next_datetime += timedelta(weeks=1)
+
+                            else: # Fallback jika repeat_days tidak valid
+                                next_datetime += timedelta(days=7) 
+                        else:
+                            next_datetime += timedelta(days=7) 
+
                     # Maju cepat jika pengingat terlewat banyak kali
                     while next_datetime <= now_local:
                         if reminder_data['repeat_type'] == 'yearly':
@@ -537,9 +665,12 @@ def check_reminders_job():
                         elif reminder_data['repeat_type'] == 'daily':
                             next_datetime += timedelta(days=1)
                         elif reminder_data['repeat_type'] == 'weekly':
-                            next_datetime += timedelta(days=7) # Maju 1 minggu
+                            next_datetime += timedelta(days=7)
                         elif reminder_data['repeat_type'] == 'weekly_custom':
-                            next_datetime += timedelta(days=7) # Maju 1 minggu
+                            # Ini juga perlu logika maju cepat yang sama dengan di atas
+                            # Untuk demo, ini cukup rumit jika ada banyak yang terlewat
+                            # Solusi sederhana: majukan 1 minggu terus sampai melebihi now_local
+                            next_datetime += timedelta(weeks=1)
                             
                     update_db('UPDATE reminders SET datetime = ?, notified = 0 WHERE id = ?', 
                               (next_datetime.isoformat(), reminder_data['id']))
