@@ -18,5 +18,5 @@ COPY . .
 EXPOSE $PORT
 
 # Perintah untuk menjalankan aplikasi saat kontainer dimulai
-# Gunicorn adalah WSGI server yang direkomendasikan untuk produksi
+# Menggunakan bentuk shell CMD untuk memastikan $PORT diinterpretasikan
 CMD gunicorn app:app --bind 0.0.0.0:"$PORT"
