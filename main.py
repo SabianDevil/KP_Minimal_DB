@@ -1,9 +1,34 @@
 import os
+from flask import Flask, request, jsonify, render_template
+from sqlalchemy import create_engine, Column, String, DateTime, Boolean, Integer
+from sqlalchemy.orm import sessionmaker, declarative_base
 from datetime import datetime, timedelta
 import re
 import pytz 
-import uuid 
 
+# --- INISIALISASI APLIKASI FLASK ---
+app = Flask(__name__)
+
+# --- KONFIGURASI DATABASE SQLite ---
+# File database SQLite akan dibuat di dalam direktori kerja aplikasi Anda di Railway
+DATABASE_URL = "sqlite:///app_database.db" 
+
+# --- DEBUGGING (Opsional, bisa dihapus setelah berhasil) ---
+print(f"DEBUG: Menggunakan DATABASE_URL: '{DATABASE_URL}'") 
+# --- AKHIR DEBUGGING ---
+
+try:
+    engine = create_engine(DATABASE_URL)
+    # Coba koneksi segera setelah engine dibuat
+    with engine.connect() as connection:
+        print("INFO: Database connection engine created and tested successfully with SQLite.")
+except Exception as e:
+    print(f"FATAL ERROR: Failed to create database engine or connect: {e}")
+    # Jangan raise error di sini agar aplikasi Flask bisa start dan menampilkan status
+    raise e 
+
+Session = sessionmaker(bind=engine)
+Base = declarative_base()
 
 # --- KONFIGURASI ZONA WAKTU ---
 LOCAL_TIMEZONE = pytz.timezone('Asia/Jakarta') 
@@ -20,23 +45,29 @@ TIMEZONE_MAP = {
     "gmt-7": "Etc/GMT+7"
 }
 
-# --- MODEL PENGINGAT (Sederhana untuk memori, bukan ORM) ---
-class ReminderData:
-    def __init__(self, id, user_id, text, reminder_time, created_at, is_completed, repeat_type, repeat_interval):
-        self.id = id
-        self.user_id = user_id
-        self.text = text
-        self.reminder_time = reminder_time # datetime object
-        self.created_at = created_at
-        self.is_completed = is_completed
-        self.repeat_type = repeat_type
-        self.repeat_interval = repeat_interval
+# --- MODEL DATABASE ---
+class Reminder(Base):
+    __tablename__ = 'reminders'
+    id = Column(Integer, primary_key=True, autoincrement=True) 
+    user_id = Column(String, default="default_user", nullable=False) 
+    text = Column(String, nullable=False)
+    reminder_time = Column(DateTime, nullable=False) 
+    created_at = Column(DateTime, default=datetime.utcnow) 
+    is_completed = Column(Boolean, default=False)
+    repeat_type = Column(String, default="none") 
+    repeat_interval = Column(Integer, default=0) 
+
+    def __repr__(self):
+        return f"<Reminder(id='{self.id}', text='{self.text}', time='{self.reminder_time}')>"
 
     def to_dict(self):
         reminder_time_iso = None
         if self.reminder_time:
             try:
-                reminder_time_iso = self.reminder_time.isoformat()
+                # Ambil datetime naive dari DB, lokalisasi sebagai UTC, lalu konversi ke LOCAL_TIMEZONE untuk tampilan
+                dt_utc_aware = pytz.utc.localize(self.reminder_time)
+                dt_local_aware = dt_utc_aware.astimezone(LOCAL_TIMEZONE)
+                reminder_time_iso = dt_local_aware.isoformat()
             except Exception as dt_e:
                 print(f"ERROR in to_dict (reminder_time): Failed to isoformat {self.reminder_time}: {dt_e}")
                 reminder_time_iso = self.reminder_time.strftime('%Y-%m-%dT%H:%M:%S')
@@ -44,7 +75,9 @@ class ReminderData:
         created_at_iso = None
         if self.created_at:
             try:
-                created_at_iso = self.created_at.isoformat()
+                dt_created_utc_aware = pytz.utc.localize(self.created_at)
+                dt_created_local_aware = dt_created_utc_aware.astimezone(LOCAL_TIMEZONE)
+                created_at_iso = dt_created_local_aware.isoformat()
             except Exception as dt_e:
                 print(f"ERROR in to_dict (created_at): Failed to isoformat {self.created_at}: {dt_e}")
                 created_at_iso = self.created_at.strftime('%Y-%m-%dT%H:%M:%S')
@@ -60,9 +93,7 @@ class ReminderData:
             "repeat_interval": int(self.repeat_interval) if self.repeat_interval is not None else 0 
         }
 
-
 # --- FUNGSI NLP: extract_schedule ---
-# Ini adalah inti AI Anda yang mengurai teks untuk menemukan jadwal.
 def extract_schedule(text):
     original_text = text.lower()
     processed_text = original_text 
@@ -312,7 +343,6 @@ def format_timezone_display(dt_object):
     return "" 
 
 # --- Fungsi Utama Skrip ---
-# Ini adalah bagian yang akan dieksekusi saat skrip dijalankan.
 if __name__ == "__main__":
     print("--- Aplikasi AI Pengingat (Backend Saja) Dimulai ---")
     
