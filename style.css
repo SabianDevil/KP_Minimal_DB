@@ -1,159 +1,4 @@
-body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background-color: #e0f2f7; /* Light blue background */
-    color: #333;
-    display: flex;
-    justify-content: center;
-    align-items: flex-start;
-    min-height: 100vh;
-    margin: 0;
-    padding: 20px;
-    box-sizing: border-box;
-}
-
-.container {
-    background-color: #ffffff;
-    padding: 30px;
-    border-radius: 12px;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
-    width: 100%;
-    max-width: 1200px; /* Increased max-width for calendar */
-    text-align: center;
-}
-
-h1 {
-    color: #0288d1; /* Deep sky blue */
-    margin-bottom: 25px;
-    font-size: 2.5em;
-    font-weight: 700;
-}
-
-h2, h3 {
-    color: #0288d1;
-    margin-top: 30px;
-    margin-bottom: 15px;
-    font-size: 1.8em;
-    font-weight: 600;
-    text-align: left; /* Align section titles to left */
-}
-
-.input-section {
-    margin-bottom: 25px;
-    text-align: left;
-}
-
-label {
-    display: block;
-    font-size: 1.1em;
-    margin-bottom: 8px;
-    color: #555;
-}
-
-textarea {
-    width: calc(100% - 20px);
-    padding: 10px;
-    margin-bottom: 15px;
-    border: 1px solid #b0bec5;
-    border-radius: 8px;
-    font-size: 1em;
-    resize: vertical;
-    min-height: 80px;
-    box-sizing: border-box;
-}
-
-button {
-    background-color: #00bcd4; /* Cyan */
-    color: white;
-    padding: 12px 25px;
-    border: none;
-    border-radius: 8px;
-    font-size: 1.1em;
-    cursor: pointer;
-    transition: background-color 0.3s ease, transform 0.2s ease;
-    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
-}
-
-button:hover {
-    background-color: #0097a7; /* Darker cyan */
-    transform: translateY(-2px);
-    box-shadow: 0 5px 12px rgba(0, 0, 0, 0.2);
-}
-
-button:active {
-    transform: translateY(0);
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-}
-
-/* --- Layout for Left and Right Panels --- */
-.main-content {
-    display: flex;
-    gap: 20px; /* Space between panels */
-    margin-top: 20px;
-}
-
-.left-panel, .right-panel {
-    flex: 1; /* Each panel takes equal width */
-    background-color: #f9f9f9;
-    padding: 20px;
-    border-radius: 10px;
-    box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.05);
-}
-
-.scrollable {
-    max-height: 350px; /* Adjusted height for lists */
-    overflow-y: auto;
-    border: 1px solid #e0e0e0;
-    border-radius: 8px;
-    padding: 10px;
-    background-color: #fff;
-    text-align: left;
-}
-
-.reminder-item {
-    background-color: #ffffff;
-    padding: 10px 15px;
-    margin-bottom: 8px;
-    border-radius: 6px;
-    border: 1px solid #cfd8dc;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    word-wrap: break-word;
-    white-space: normal;
-    font-size: 0.95em;
-}
-
-.reminder-item.notified {
-    background-color: #eceff1; /* Light gray for notified */
-    color: #78909c;
-    text-decoration: line-through;
-}
-
-.reminder-item span {
-    flex-grow: 1;
-    margin-right: 10px;
-    line-height: 1.4;
-}
-
-.delete-btn {
-    background-color: #ef5350; /* Red */
-    padding: 5px 10px;
-    font-size: 0.8em;
-    border-radius: 5px;
-    box-shadow: none;
-}
-
-.delete-btn:hover {
-    background-color: #d32f2f; /* Darker red */
-    transform: none;
-    box-shadow: none;
-}
-
-.loading, .no-reminders, .no-selection {
-    text-align: center;
-    color: #777;
-    padding: 20px;
-}
+/* ... (bagian atas CSS yang sudah ada) ... */
 
 /* --- Calendar Specific Styles --- */
 .calendar-nav {
@@ -244,19 +89,20 @@ button:active {
 .day-number {
     font-size: 1.1em;
     font-weight: bold;
-    margin-bottom: 5px;
+    margin-bottom: 5px; /* Memberi sedikit ruang di bawah nomor tanggal */
 }
 
 .reminder-marker {
-    width: 6px;
-    height: 6px;
-    background-color: #ef5350; /* Red dot for reminders */
+    width: 8px; /* Sedikit lebih besar agar lebih terlihat */
+    height: 8px; /* Sedikit lebih besar agar lebih terlihat */
+    background-color: #ef5350; /* Merah */
     border-radius: 50%;
-    margin-top: auto; /* Push marker to bottom */
+    margin-top: auto; /* Mendorong penanda ke bagian bawah sel hari */
+    margin-bottom: 2px; /* Sedikit ruang dari bawah */
 }
 
 .reminder-marker.multi {
-    background-color: #ff9800; /* Orange dot for multiple reminders */
+    background-color: #ff9800; /* Oranye untuk banyak pengingat */
 }
 
 /* Media Queries for smaller screens */
