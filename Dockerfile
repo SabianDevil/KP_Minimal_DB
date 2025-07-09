@@ -1,8 +1,11 @@
 FROM python:3.9-slim-buster
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt # Ini akan menginstal dependency jika ada
+RUN pip install --no-cache-dir -r requirements.txt 
 COPY app.py .
-ENV PORT=8000 # Set PORT ke 8000
-EXPOSE 8000 # Expose PORT 8000
+# --- PERBAIKAN DI SINI ---
+# Komentar ini sekarang di baris terpisah
+ENV PORT=8000 
+# --- AKHIR PERBAIKAN ---
+EXPOSE 8000
 CMD ["python", "app.py"]
