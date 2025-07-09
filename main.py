@@ -1,8 +1,16 @@
 import os
+from flask import Flask, request, jsonify, render_template
 from datetime import datetime, timedelta
 import re
 import pytz 
+import uuid 
 
+
+# --- INISIALISASI APLIKASI FLASK ---
+app = Flask(__name__)
+
+# --- PENYIMPANAN PENGINGAT DI MEMORI (TIDAK PERSISTEN) ---
+reminders_in_memory = []
 
 # --- KONFIGURASI ZONA WAKTU ---
 LOCAL_TIMEZONE = pytz.timezone('Asia/Jakarta') 
@@ -19,8 +27,8 @@ TIMEZONE_MAP = {
     "gmt-7": "Etc/GMT+7"
 }
 
-# --- MODEL PENGINGAT (Sederhana untuk memori, bukan ORM) ---
-class ReminderData:
+# --- MODEL PENGINGAT (VERSI SIMPLIFIKASI UNTUK MEMORI) ---
+class Reminder:
     def __init__(self, id, user_id, text, reminder_time, created_at, is_completed, repeat_type, repeat_interval):
         self.id = id
         self.user_id = user_id
@@ -61,7 +69,6 @@ class ReminderData:
 
 
 # --- FUNGSI NLP: extract_schedule ---
-# Ini adalah inti AI Anda yang mengurai teks untuk menemukan jadwal.
 def extract_schedule(text):
     original_text = text.lower()
     processed_text = original_text 
@@ -310,29 +317,97 @@ def format_timezone_display(dt_object):
         return tz_name_full
     return "" 
 
-# --- Fungsi Utama Skrip ---
-if __name__ == "__main__":
-    print("--- Aplikasi AI Pengingat (Backend Saja) Dimulai ---")
-    
-    # Contoh teks pengingat yang akan diproses
-    reminder_texts = [
-        "Ingatkan saya beli susu besok jam 7 pagi",
-        "Rapat tim jam 14:30 hari ini",
-        "Telepon ibu dalam 30 menit",
-        "Bayar tagihan listrik tanggal 25 Juli 2025",
-        "Presentasi proyek lusa jam 10 pagi"
-    ]
+# --- Routes Aplikasi Web ---
+@app.route('/')
+def index():
+    return render_template('index.html')
 
-    for i, text in enumerate(reminder_texts):
-        print(f"\n--- Memproses Teks {i+1}: '{text}' ---")
-        parsed_info = extract_schedule(text)
-
-        if parsed_info:
-            formatted_datetime = parsed_info['datetime'].strftime('%d %B %Y %H:%M:%S %Z%z')
-            print(f"  Event: {parsed_info['event']}")
-            print(f"  Jadwal: {formatted_datetime}")
-            print(f"  Pengulangan: {parsed_info['repeat_type']} (Interval: {parsed_info['repeat_interval']})")
-        else:
-            print("  Tidak dapat mengurai jadwal atau waktu sudah lampau.")
+@app.route('/set_reminder', methods=['POST'])
+def set_reminder_api():
+    global reminders_in_memory
     
-    print("\n--- Selesai Memproses Pengingat ---")
+    data = request.json
+    reminder_text = data.get('text')
+
+    if not reminder_text:
+        return jsonify({"error": "Teks pengingat diperlukan"}), 400
+
+    parsed_schedule = extract_schedule(reminder_text)
+
+    if not parsed_schedule:
+        return jsonify({"error": "Tidak dapat memahami jadwal pengingat dari teks yang diberikan."}), 400
+
+    new_reminder_obj = Reminder(
+        id=str(uuid.uuid4()), 
+        user_id="default_user",
+        text=parsed_schedule['event'],
+        reminder_time=parsed_schedule['datetime'], 
+        created_at=datetime.now(LOCAL_TIMEZONE),
+        is_completed=False,
+        repeat_type=parsed_schedule['repeat_type'],
+        repeat_interval=parsed_schedule['repeat_interval']
+    )
+    
+    reminders_in_memory.append(new_reminder_obj)
+    reminders_in_memory.sort(key=lambda r: r.reminder_time)
+
+    print(f"DEBUG: Pengingat baru ditambahkan ke memori: {new_reminder_obj.to_dict()}")
+    return jsonify({"message": "Pengingat berhasil diatur (disimpan di memori)!", "reminder": new_reminder_obj.to_dict()}), 201
+
+
+@app.route('/get_reminders', methods=['GET'])
+def get_reminders_api():
+    global reminders_in_memory
+    
+    print("DEBUG: Memulai get_reminders_api (dari memori).")
+    
+    reminders_data = []
+    for r_obj in reminders_in_memory:
+        try:
+            r_dict = r_obj.to_dict() 
+            
+            if r_dict['reminder_time']: 
+                dt_obj_from_iso = datetime.fromisoformat(r_dict['reminder_time']) 
+                tz_display = format_timezone_display(dt_obj_from_iso)
+                if tz_display:
+                    r_dict['reminder_time_display'] = dt_obj_from_iso.strftime(f'%d %B %Y %H:%M {tz_display}')
+                else:
+                    r_dict['reminder_time_display'] = dt_obj_from_iso.strftime('%d %B %Y %H:%M')
+            else:
+                r_dict['reminder_time_display'] = "Waktu tidak tersedia" 
+            
+            reminders_data.append(r_dict)
+        except Exception as e:
+            print(f"FATAL ERROR: Gagal memproses atau menserialisasi pengingat dari memori: {e}")
+            pass 
+
+    print(f"DEBUG: Mengembalikan {len(reminders_data)} pengingat dari memori.")
+    return jsonify(reminders_data), 200
+
+@app.route('/complete_reminder/<string:reminder_id>', methods=['POST'])
+def complete_reminder_api(reminder_id):
+    global reminders_in_memory
+    for r_obj in reminders_in_memory:
+        if str(r_obj.id) == reminder_id:
+            r_obj.is_completed = True
+            print(f"DEBUG: Pengingat ID {reminder_id} ditandai selesai di memori.")
+            return jsonify({"message": "Pengingat ditandai selesai (di memori)!", "reminder": r_obj.to_dict()}), 200
+    return jsonify({"error": "Pengingat tidak ditemukan di memori"}), 404
+
+@app.route('/delete_reminder/<string:reminder_id>', methods=['DELETE'])
+def delete_reminder_api(reminder_id):
+    global reminders_in_memory
+    initial_len = len(reminders_in_memory)
+    reminders_in_memory = [r_obj for r_obj in reminders_in_memory if str(r_obj.id) != reminder_id]
+    if len(reminders_in_memory) < initial_len:
+        print(f"DEBUG: Pengingat ID {reminder_id} dihapus dari memori.")
+        return jsonify({"message": "Pengingat berhasil dihapus (dari memori)!"}), 200
+    return jsonify({"error": "Pengingat tidak ditemukan di memori"}), 404
+
+
+# --- Bagian untuk menjalankan Flask App ---
+if __name__ == '__main__':
+    print("--- Aplikasi Flask AI Pengingat Dimulai ---")
+    port = int(os.getenv("PORT", 5000))
+    print(f"INFO: Flask app running on port {port}")
+    app.run(debug=False, host='0.0.0.0', port=port)
