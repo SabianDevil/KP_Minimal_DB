@@ -3,13 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hello Railway (Docker Root Files)!</title>
+    <title>AI Pengingat Pribadi (Web)</title>
     <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-    <h1>Halo, Railway dengan Docker!</h1>
-    <p>Aplikasi "Hello World" ini semua filenya ada di root folder dan di-deploy dengan Dockerfile.</p>
-    <button id="myButton">Pencet Saya!</button>
+    <div class="container">
+        <h1>AI Pengingat Pribadi</h1>
+
+        <div class="input-section">
+            <label for="reminderInput">Masukkan catatan jadwal Anda:</label>
+            <textarea id="reminderInput" placeholder="Contoh: ingatkan saya rapat besok jam 10 pagi WIB" rows="4"></textarea>
+            <button id="addReminderBtn">Tambah Pengingat</button>
+        </div>
+
+        <div class="list-section">
+            <h2>Daftar Pengingat</h2>
+            <div id="reminderList" class="scrollable">
+                <p class="loading">Memuat pengingat...</p>
+            </div>
+        </div>
+    </div>
 
     <script src="/script.js"></script>
 </body>
