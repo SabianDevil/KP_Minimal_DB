@@ -1,5 +1,5 @@
 import os
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify
 from datetime import datetime, timedelta
 import re
 import pytz 
@@ -32,7 +32,7 @@ class Reminder:
         self.id = id
         self.user_id = user_id
         self.text = text
-        self.reminder_time = reminder_time # datetime object
+        self.reminder_time = reminder_time 
         self.created_at = created_at
         self.is_completed = is_completed
         self.repeat_type = repeat_type
@@ -316,97 +316,32 @@ def format_timezone_display(dt_object):
         return tz_name_full
     return "" 
 
-# --- Routes Aplikasi Web ---
-@app.route('/')
-def index():
-    return render_template('index.html')
-
-@app.route('/set_reminder', methods=['POST'])
-def set_reminder_api():
-    global reminders_in_memory
+# --- Fungsi Utama Skrip ---
+# Ini adalah bagian yang akan dieksekusi saat skrip dijalankan.
+if __name__ == "__main__":
+    print("--- Aplikasi AI Pengingat (Backend Saja) Dimulai ---")
     
-    data = request.json
-    reminder_text = data.get('text')
+    # Contoh teks pengingat yang akan diproses
+    reminder_texts = [
+        "Ingatkan saya beli susu besok jam 7 pagi",
+        "Rapat tim jam 14:30 hari ini",
+        "Telepon ibu dalam 30 menit",
+        "Bayar tagihan listrik tanggal 25 Juli 2025",
+        "Presentasi proyek lusa jam 10 pagi",
+        "Meeting dengan Pak Budi minggu depan hari rabu jam 15:00",
+        "Jadwal penerbangan 17 Agustus 2025 jam 10 malam EST"
+    ]
 
-    if not reminder_text:
-        return jsonify({"error": "Teks pengingat diperlukan"}), 400
+    for i, text in enumerate(reminder_texts):
+        print(f"\n--- Memproses Teks {i+1}: '{text}' ---")
+        parsed_info = extract_schedule(text)
 
-    parsed_schedule = extract_schedule(reminder_text)
-
-    if not parsed_schedule:
-        return jsonify({"error": "Tidak dapat memahami jadwal pengingat dari teks yang diberikan."}), 400
-
-    new_reminder_obj = Reminder(
-        id=str(uuid.uuid4()), 
-        user_id="default_user",
-        text=parsed_schedule['event'],
-        reminder_time=parsed_schedule['datetime'], # Ini sudah aware
-        created_at=datetime.now(LOCAL_TIMEZONE),
-        is_completed=False,
-        repeat_type=parsed_schedule['repeat_type'],
-        repeat_interval=parsed_schedule['repeat_interval']
-    )
+        if parsed_info:
+            formatted_datetime = parsed_info['datetime'].strftime('%d %B %Y %H:%M:%S %Z%z')
+            print(f"  Event: {parsed_info['event']}")
+            print(f"  Jadwal: {formatted_datetime}")
+            print(f"  Pengulangan: {parsed_info['repeat_type']} (Interval: {parsed_info['repeat_interval']})")
+        else:
+            print("  Tidak dapat mengurai jadwal atau waktu sudah lampau.")
     
-    reminders_in_memory.append(new_reminder_obj)
-    reminders_in_memory.sort(key=lambda r: r.reminder_time)
-
-    print(f"DEBUG: Pengingat baru ditambahkan ke memori: {new_reminder_obj.to_dict()}")
-    return jsonify({"message": "Pengingat berhasil diatur (disimpan di memori)!", "reminder": new_reminder_obj.to_dict()}), 201
-
-
-@app.route('/get_reminders', methods=['GET'])
-def get_reminders_api():
-    global reminders_in_memory
-    
-    print("DEBUG: Memulai get_reminders_api (dari memori).")
-    
-    reminders_data = []
-    for r_obj in reminders_in_memory:
-        try:
-            r_dict = r_obj.to_dict() 
-            
-            if r_dict['reminder_time']: 
-                dt_obj_from_iso = datetime.fromisoformat(r_dict['reminder_time']) 
-                tz_display = format_timezone_display(dt_obj_from_iso)
-                if tz_display:
-                    r_dict['reminder_time_display'] = dt_obj_from_iso.strftime(f'%d %B %Y %H:%M {tz_display}')
-                else:
-                    r_dict['reminder_time_display'] = dt_obj_from_iso.strftime('%d %B %Y %H:%M')
-            else:
-                r_dict['reminder_time_display'] = "Waktu tidak tersedia" 
-            
-            reminders_data.append(r_dict)
-        except Exception as e:
-            print(f"FATAL ERROR: Gagal memproses atau menserialisasi pengingat dari memori: {e}")
-            pass 
-
-    print(f"DEBUG: Mengembalikan {len(reminders_data)} pengingat dari memori.")
-    return jsonify(reminders_data), 200
-
-@app.route('/complete_reminder/<string:reminder_id>', methods=['POST'])
-def complete_reminder_api(reminder_id):
-    global reminders_in_memory
-    for r_obj in reminders_in_memory:
-        if str(r_obj.id) == reminder_id:
-            r_obj.is_completed = True
-            print(f"DEBUG: Pengingat ID {reminder_id} ditandai selesai di memori.")
-            return jsonify({"message": "Pengingat ditandai selesai (di memori)!", "reminder": r_obj.to_dict()}), 200
-    return jsonify({"error": "Pengingat tidak ditemukan di memori"}), 404
-
-@app.route('/delete_reminder/<string:reminder_id>', methods=['DELETE'])
-def delete_reminder_api(reminder_id):
-    global reminders_in_memory
-    initial_len = len(reminders_in_memory)
-    reminders_in_memory = [r_obj for r_obj in reminders_in_memory if str(r_obj.id) != reminder_id]
-    if len(reminders_in_memory) < initial_len:
-        print(f"DEBUG: Pengingat ID {reminder_id} dihapus dari memori.")
-        return jsonify({"message": "Pengingat berhasil dihapus (dari memori)!"}), 200
-    return jsonify({"error": "Pengingat tidak ditemukan di memori"}), 404
-
-
-# --- Bagian untuk menjalankan Flask App ---
-if __name__ == '__main__':
-    print("--- Memulai Aplikasi Flask AI Pengingat ---")
-    port = int(os.getenv("PORT", 5000))
-    print(f"INFO: Flask app running on port {port}")
-    app.run(debug=False, host='0.0.0.0', port=port) # Ubah debug=True ke debug=False untuk Railway
+    print("\n--- Selesai Memproses Pengingat ---")
