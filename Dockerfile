@@ -7,11 +7,12 @@ WORKDIR /app
 # Salin file requirements.txt ke direktori kerja
 COPY requirements.txt .
 
-# Instal dependensi Python
+# Instal dependensi Python dan model SpaCy
+# --no-cache-dir untuk hemat ruang
+# Perintah python -m spacy download id_core_news_sm dihapus karena sudah di requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Salin semua file lainnya ke direktori kerja kontainer
-# Ini akan menyalin app.py, Dockerfile, index.html, style.css, script.js, database.py
 COPY . .
 
 # Inisialisasi database saat build Docker (membuat reminders.db)
@@ -21,5 +22,4 @@ RUN python database.py
 EXPOSE $PORT
 
 # Perintah untuk menjalankan aplikasi saat kontainer dimulai
-# Menggunakan bentuk shell CMD untuk memastikan $PORT diinterpretasikan
 CMD gunicorn app:app --bind 0.0.0.0:"$PORT"
