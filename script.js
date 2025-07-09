@@ -1,3 +1,22 @@
+// Function to generate a unique ID (UUID v4 like)
+function generateUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+}
+
+// Get or create user_id
+let userId = localStorage.getItem('user_id');
+if (!userId) {
+    userId = generateUUID();
+    localStorage.setItem('user_id', userId);
+    console.log('New User ID generated:', userId);
+    alert('Selamat datang! Ini adalah pengenal unik Anda. Jaga baik-baik agar jadwal Anda tidak hilang:\n\n' + userId);
+} else {
+    console.log('Existing User ID:', userId);
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     const reminderInput = document.getElementById('reminderInput');
     const addReminderBtn = document.getElementById('addReminderBtn');
@@ -8,11 +27,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const prevMonthBtn = document.getElementById('prevMonthBtn');
     const nextMonthBtn = document.getElementById('nextMonthBtn');
     const selectedDateRemindersDiv = document.getElementById('selectedDateReminders');
-    const realtimeClockDiv = document.getElementById('realtimeClock'); // Ambil elemen jam
+    const realtimeClockDiv = document.getElementById('realtimeClock'); 
 
     let currentMonth = new Date().getMonth();
     let currentYear = new Date().getFullYear();
-    let selectedCalendarDate = null; // To store the currently selected date in the calendar
+    let selectedCalendarDate = null; 
 
     // --- Helper Functions ---
     const getMonthName = (monthIndex) => {
@@ -21,32 +40,31 @@ document.addEventListener('DOMContentLoaded', function() {
         return monthNames[monthIndex];
     };
 
-    const getDayName = (dayIndex) => { // Fungsi ini sebenarnya tidak digunakan lagi di kalender, tapi bisa disimpan
-        const dayNames = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
-        return dayNames[dayIndex];
-    };
-
     // Fungsi untuk memperbarui jam dan tanggal realtime
     function updateRealtimeClock() {
         const now = new Date();
-        // Opsi format untuk tanggal dan waktu
         const optionsDate = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
-        const optionsTime = { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }; // Format 24 jam
+        const optionsTime = { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
 
-        const formattedDate = now.toLocaleDateString('id-ID', optionsDate); // Format tanggal Indonesia
-        const formattedTime = now.toLocaleTimeString('id-ID', optionsTime); // Format waktu Indonesia
+        const formattedDate = now.toLocaleDateString('id-ID', optionsDate);
+        const formattedTime = now.toLocaleTimeString('id-ID', optionsTime);
 
-        realtimeClockDiv.textContent = `${formattedDate}, ${formattedTime} WIB`; // Tambahkan "WIB" secara manual
+        realtimeClockDiv.textContent = `${formattedDate}, ${formattedTime} WIB`; 
     }
 
     // --- Core Reminder List Functions ---
     async function fetchReminders() {
         reminderListDiv.innerHTML = '<p class="loading">Memuat pengingat...</p>';
         try {
-            const response = await fetch('/get_reminders');
+            const response = await fetch(`/get_reminders?user_id=${userId}`);
             const reminders = await response.json();
 
-            reminderListDiv.innerHTML = ''; // Clear previous content
+            if (response.status !== 200 && reminders.success === false) {
+                 reminderListDiv.innerHTML = `<p class="error">Gagal memuat pengingat: ${reminders.message}</p>`;
+                 return;
+            }
+
+            reminderListDiv.innerHTML = ''; 
 
             if (reminders.length === 0) {
                 reminderListDiv.innerHTML = '<p class="no-reminders">Belum ada pengingat terjadwal.</p>';
@@ -54,22 +72,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             reminders.forEach(r => {
-                const reminderItem = document.createElement('div');
-                reminderItem.className = 'reminder-item';
-                if (r.notified) {
-                    reminderItem.classList.add('notified');
-                }
-
-                const reminderText = document.createElement('span');
-                reminderText.textContent = `${r.formatted_datetime} - ${r.event} ${r.repeat_type !== 'none' ? '(Berulang)' : ''}`;
-                
-                const deleteButton = document.createElement('button');
-                deleteButton.className = 'delete-btn';
-                deleteButton.textContent = 'Hapus';
-                deleteButton.onclick = () => deleteReminder(r.id);
-
-                reminderItem.appendChild(reminderText);
-                reminderItem.appendChild(deleteButton);
+                const reminderItem = createReminderDisplayElement(r); // Gunakan fungsi baru
                 reminderListDiv.appendChild(reminderItem);
             });
         } catch (error) {
@@ -77,6 +80,66 @@ document.addEventListener('DOMContentLoaded', function() {
             reminderListDiv.innerHTML = '<p class="error">Gagal memuat pengingat. Silakan coba lagi.</p>';
         }
     }
+
+    // Fungsi untuk membuat elemen tampilan pengingat dengan detail
+    function createReminderDisplayElement(r, isCalendarDetail = false) {
+        const reminderItem = document.createElement('div');
+        reminderItem.className = 'reminder-item';
+        if (r.notified) {
+            reminderItem.classList.add('notified');
+        }
+
+        const mainContent = document.createElement('div');
+        mainContent.className = 'reminder-main-content';
+
+        const reminderText = document.createElement('span');
+        reminderText.textContent = `${isCalendarDetail ? r.time_only : r.formatted_datetime} - ${r.event} ${r.repeat_type !== 'none' ? '(Berulang)' : ''} ${isCalendarDetail ? `(${r.notified_status})` : ''}`;
+        mainContent.appendChild(reminderText);
+
+        const deleteButton = document.createElement('button');
+        deleteButton.className = 'delete-btn';
+        deleteButton.textContent = 'Hapus';
+        deleteButton.onclick = (e) => {
+            e.stopPropagation(); // Mencegah toggle detail saat klik hapus
+            deleteReminder(r.id);
+        };
+        mainContent.appendChild(deleteButton);
+        reminderItem.appendChild(mainContent);
+
+        // --- Bagian Detail ---
+        const detailContent = document.createElement('div');
+        detailContent.className = 'reminder-detail-content';
+        
+        let detailsHtml = '';
+        if (r.description) detailsHtml += `<p><strong>Deskripsi:</strong> ${r.description}</p>`;
+        if (r.notes) detailsHtml += `<p><strong>Catatan:</strong> ${r.notes}</p>`;
+        if (r.mood) detailsHtml += `<p><strong>Mood:</strong> ${r.mood}</p>`;
+        if (r.suggestion) detailsHtml += `<p><strong>Saran:</strong> ${r.suggestion}</p>`;
+
+        if (detailsHtml) {
+            detailContent.innerHTML = detailsHtml;
+            detailContent.style.display = 'none'; // Sembunyikan default
+            reminderItem.appendChild(detailContent);
+
+            // Tambahkan tombol/area untuk toggle detail
+            const toggleBtn = document.createElement('div');
+            toggleBtn.className = 'reminder-toggle-btn';
+            toggleBtn.textContent = 'Lihat Detail ▼';
+            toggleBtn.onclick = () => {
+                if (detailContent.style.display === 'none') {
+                    detailContent.style.display = 'block';
+                    toggleBtn.textContent = 'Sembunyikan Detail ▲';
+                } else {
+                    detailContent.style.display = 'none';
+                    toggleBtn.textContent = 'Lihat Detail ▼';
+                }
+            };
+            mainContent.appendChild(toggleBtn); // Tambahkan tombol toggle di main content
+        }
+
+        return reminderItem;
+    }
+
 
     addReminderBtn.addEventListener('click', async function() {
         const note = reminderInput.value.trim();
@@ -91,17 +154,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ note: note })
+                body: JSON.stringify({ note: note, user_id: userId }) 
             });
 
             const result = await response.json();
             if (result.success) {
                 alert(result.message);
                 reminderInput.value = '';
-                fetchReminders(); // Refresh general list
-                renderCalendar(currentMonth, currentYear); // Refresh calendar
+                fetchReminders(); 
+                renderCalendar(currentMonth, currentYear); 
                 if (selectedCalendarDate) {
-                    showRemindersForSelectedDate(selectedCalendarDate); // Refresh selected date's reminders
+                    showRemindersForSelectedDate(selectedCalendarDate); 
                 }
             } else {
                 alert('Gagal menambah pengingat: ' + result.message);
@@ -117,16 +180,16 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         try {
-            const response = await fetch(`/delete_reminder/${id}`, {
+            const response = await fetch(`/delete_reminder/${id}?user_id=${userId}`, {
                 method: 'DELETE'
             });
             const result = await response.json();
             if (result.success) {
                 alert(result.message);
-                fetchReminders(); // Refresh general list
-                renderCalendar(currentMonth, currentYear); // Refresh calendar
+                fetchReminders(); 
+                renderCalendar(currentMonth, currentYear); 
                 if (selectedCalendarDate) {
-                    showRemindersForSelectedDate(selectedCalendarDate); // Refresh selected date's reminders
+                    showRemindersForSelectedDate(selectedCalendarDate); 
                 }
             } else {
                 alert('Gagal menghapus pengingat: ' + result.message);
@@ -139,10 +202,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // --- Calendar Functions ---
     async function renderCalendar(month, year) {
-        calendarGrid.innerHTML = ''; // Clear previous calendar
+        calendarGrid.innerHTML = ''; 
         currentMonthYearSpan.textContent = `${getMonthName(month)} ${year}`;
 
-        // Add day headers
         const dayNames = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
         dayNames.forEach(dayName => {
             const header = document.createElement('div');
@@ -153,29 +215,30 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const firstDayOfMonth = new Date(year, month, 1);
         const daysInMonth = new Date(year, month + 1, 0).getDate();
-        const startDay = firstDayOfMonth.getDay(); // 0 for Sunday, 1 for Monday, etc.
+        const startDay = firstDayOfMonth.getDay(); 
 
-        // Fetch reminders for the current month
         let monthlyReminders = [];
         try {
-            const response = await fetch(`/get_reminders_for_month?year=${year}&month=${month + 1}`); // month is 0-indexed in JS, 1-indexed in Python
+            const response = await fetch(`/get_reminders_for_month?year=${year}&month=${month + 1}&user_id=${userId}`);
+            if (response.status !== 200) {
+                console.error('Failed to fetch monthly reminders. Status:', response.status);
+                return;
+            }
             monthlyReminders = await response.json();
         } catch (error) {
             console.error('Error fetching monthly reminders:', error);
         }
 
-        // Create empty leading days
         for (let i = 0; i < startDay; i++) {
             const emptyDay = document.createElement('div');
             emptyDay.className = 'calendar-day empty-day';
             calendarGrid.appendChild(emptyDay);
         }
 
-        // Create days of the month
         for (let day = 1; day <= daysInMonth; day++) {
             const dayElement = document.createElement('div');
             dayElement.className = 'calendar-day';
-            dayElement.dataset.date = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`; // YYYY-MM-DD
+            dayElement.dataset.date = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
             dayElement.onclick = () => selectCalendarDay(dayElement);
 
             const dayNumberSpan = document.createElement('span');
@@ -183,9 +246,7 @@ document.addEventListener('DOMContentLoaded', function() {
             dayNumberSpan.textContent = day;
             dayElement.appendChild(dayNumberSpan);
 
-            // Add reminder markers
             const remindersOnThisDay = monthlyReminders.filter(r => {
-                // Ensure r.date is correctly formatted 'YYYY-MM-DD'
                 return r.date === dayElement.dataset.date;
             });
 
@@ -198,10 +259,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 dayElement.appendChild(marker);
             }
             
-            // Mark the selected day if it matches
             if (selectedCalendarDate && dayElement.dataset.date === selectedCalendarDate) {
                 dayElement.classList.add('selected');
-                // Tidak perlu panggil showRemindersForSelectedDate di sini, karena sudah dipanggil di selectCalendarDay
             }
 
             calendarGrid.appendChild(dayElement);
@@ -209,15 +268,13 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function selectCalendarDay(dayElement) {
-        // Remove 'selected' class from previous selected day
         const previouslySelected = document.querySelector('.calendar-day.selected');
         if (previouslySelected) {
             previouslySelected.classList.remove('selected');
         }
 
-        // Add 'selected' class to the new day
         dayElement.classList.add('selected');
-        selectedCalendarDate = dayElement.dataset.date; // Store as YYYY-MM-DD string
+        selectedCalendarDate = dayElement.dataset.date;
 
         showRemindersForSelectedDate(selectedCalendarDate);
     }
@@ -225,11 +282,16 @@ document.addEventListener('DOMContentLoaded', function() {
     async function showRemindersForSelectedDate(dateString) {
         selectedDateRemindersDiv.innerHTML = '<p class="loading">Memuat pengingat...</p>';
         try {
-            const response = await fetch('/get_reminders'); // Get all reminders
+            const response = await fetch(`/get_reminders?user_id=${userId}`); 
             const allReminders = await response.json();
 
+            if (response.status !== 200 && allReminders.success === false) {
+                 selectedDateRemindersDiv.innerHTML = `<p class="error">Gagal memuat pengingat: ${allReminders.message}</p>`;
+                 return;
+            }
+
             const remindersOnThisDate = allReminders.filter(r => {
-                const reminderDate = new Date(r.datetime).toISOString().slice(0, 10); // Extract YYYY-MM-DD
+                const reminderDate = new Date(r.datetime).toISOString().slice(0, 10); 
                 return reminderDate === dateString;
             });
 
@@ -240,7 +302,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
 
-            // Sort by time
             remindersOnThisDate.sort((a, b) => {
                 const timeA = new Date(a.datetime).getTime();
                 const timeB = new Date(b.datetime).getTime();
@@ -248,23 +309,7 @@ document.addEventListener('DOMContentLoaded', function() {
             });
 
             remindersOnThisDate.forEach(r => {
-                const reminderItem = document.createElement('div');
-                reminderItem.className = 'reminder-item';
-                if (r.notified) {
-                    reminderItem.classList.add('notified');
-                }
-
-                const time = new Date(r.datetime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                const reminderText = document.createElement('span');
-                reminderText.textContent = `${time} - ${r.event} ${r.repeat_type !== 'none' ? '(Berulang)' : ''} (${r.notified_status})`;
-                
-                const deleteButton = document.createElement('button');
-                deleteButton.className = 'delete-btn';
-                deleteButton.textContent = 'Hapus';
-                deleteButton.onclick = () => deleteReminder(r.id);
-
-                reminderItem.appendChild(reminderText);
-                reminderItem.appendChild(deleteButton);
+                const reminderItem = createReminderDisplayElement(r, true); // True karena ini tampilan kalender
                 selectedDateRemindersDiv.appendChild(reminderItem);
             });
 
@@ -282,7 +327,9 @@ document.addEventListener('DOMContentLoaded', function() {
             currentMonth = 11;
             currentYear--;
         }
+        selectedCalendarDate = null; 
         renderCalendar(currentMonth, currentYear);
+        selectedDateRemindersDiv.innerHTML = '<p class="no-selection">Pilih tanggal di kalender untuk melihat jadwal.</p>';
     });
 
     nextMonthBtn.addEventListener('click', () => {
@@ -291,17 +338,18 @@ document.addEventListener('DOMContentLoaded', function() {
             currentMonth = 0;
             currentYear++;
         }
+        selectedCalendarDate = null; 
         renderCalendar(currentMonth, currentYear);
+        selectedDateRemindersDiv.innerHTML = '<p class="no-selection">Pilih tanggal di kalender untuk melihat jadwal.</p>';
     });
 
     // --- Initialization ---
-    updateRealtimeClock(); // Panggil pertama kali saat halaman dimuat
-    setInterval(updateRealtimeClock, 1000); // Perbarui setiap 1 detik
+    updateRealtimeClock(); 
+    setInterval(updateRealtimeClock, 1000); 
 
-    fetchReminders(); // Initial load of general reminder list
-    renderCalendar(currentMonth, currentYear); // Initial render of calendar
+    fetchReminders(); 
+    renderCalendar(currentMonth, currentYear); 
 
-    // Refresh reminders list every 10 seconds and re-render calendar
     setInterval(() => {
         fetchReminders();
         renderCalendar(currentMonth, currentYear);
