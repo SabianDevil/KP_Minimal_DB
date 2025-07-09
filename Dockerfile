@@ -10,9 +10,12 @@ COPY requirements.txt .
 # Instal dependensi Python
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Salin seluruh kode aplikasi dari direktori lokal ke direktori kerja kontainer
-# Ini akan menyalin app.py, Dockerfile, index.html, style.css, script.js
+# Salin semua file lainnya ke direktori kerja kontainer
+# Ini akan menyalin app.py, Dockerfile, index.html, style.css, script.js, database.py
 COPY . .
+
+# Inisialisasi database saat build Docker (membuat reminders.db)
+RUN python database.py
 
 # Beri tahu Docker bahwa kontainer akan mendengarkan di port ini
 EXPOSE $PORT
