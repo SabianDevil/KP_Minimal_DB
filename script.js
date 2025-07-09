@@ -93,7 +93,7 @@ document.addEventListener('DOMContentLoaded', function() {
         mainContent.className = 'reminder-main-content';
 
         const reminderText = document.createElement('span');
-        reminderText.textContent = `${isCalendarDetail ? r.time_only : r.formatted_datetime} - ${r.event} ${r.repeat_type !== 'none' ? '(Berulang)' : ''} ${isCalendarDetail ? `(${r.notified_status})` : ''}`;
+        reminderText.textContent = `${isCalendarDetail ? new Date(r.datetime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : r.formatted_datetime} - ${r.event} ${r.repeat_type !== 'none' ? '(Berulang)' : ''} ${isCalendarDetail ? `(${r.notified_status})` : ''}`;
         mainContent.appendChild(reminderText);
 
         const deleteButton = document.createElement('button');
@@ -111,17 +111,21 @@ document.addEventListener('DOMContentLoaded', function() {
         detailContent.className = 'reminder-detail-content';
         
         let detailsHtml = '';
-        if (r.description) detailsHtml += `<p><strong>Deskripsi:</strong> ${r.description}</p>`;
-        if (r.notes) detailsHtml += `<p><strong>Catatan:</strong> ${r.notes}</p>`;
-        if (r.mood) detailsHtml += `<p><strong>Mood:</strong> ${r.mood}</p>`;
-        if (r.suggestion) detailsHtml += `<p><strong>Saran:</strong> ${r.suggestion}</p>`;
+        // Iterasi melalui metadata untuk menampilkan semua key-value pair
+        if (r.metadata && typeof r.metadata === 'object') {
+            for (const key in r.metadata) {
+                if (r.metadata.hasOwnProperty(key) && r.metadata[key]) {
+                    const formattedKey = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()); // Format key (e.g., "favorite_meals" -> "Favorite Meals")
+                    detailsHtml += `<p><strong>${formattedKey}:</strong> ${r.metadata[key]}</p>`;
+                }
+            }
+        }
 
         if (detailsHtml) {
             detailContent.innerHTML = detailsHtml;
             detailContent.style.display = 'none'; // Sembunyikan default
             reminderItem.appendChild(detailContent);
 
-            // Tambahkan tombol/area untuk toggle detail
             const toggleBtn = document.createElement('div');
             toggleBtn.className = 'reminder-toggle-btn';
             toggleBtn.textContent = 'Lihat Detail ▼';
@@ -134,7 +138,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     toggleBtn.textContent = 'Lihat Detail ▼';
                 }
             };
-            mainContent.appendChild(toggleBtn); // Tambahkan tombol toggle di main content
+            mainContent.appendChild(toggleBtn); 
         }
 
         return reminderItem;
@@ -142,19 +146,20 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
     addReminderBtn.addEventListener('click', async function() {
-        const note = reminderInput.value.trim();
-        if (!note) {
+        const fullNoteText = reminderInput.value.trim();
+        if (!fullNoteText) {
             alert('Catatan pengingat tidak boleh kosong!');
             return;
         }
 
         try {
-            const response = await fetch('/add_reminder', {
+            // Mengirim seluruh teks ke endpoint baru
+            const response = await fetch('/add_multiple_reminders', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ note: note, user_id: userId }) 
+                body: JSON.stringify({ full_note_text: fullNoteText, user_id: userId }) 
             });
 
             const result = await response.json();
@@ -309,7 +314,7 @@ document.addEventListener('DOMContentLoaded', function() {
             });
 
             remindersOnThisDate.forEach(r => {
-                const reminderItem = createReminderDisplayElement(r, true); // True karena ini tampilan kalender
+                const reminderItem = createReminderDisplayElement(r, true); 
                 selectedDateRemindersDiv.appendChild(reminderItem);
             });
 
