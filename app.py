@@ -479,4 +479,74 @@ def get_reminders_for_month():
     
     return jsonify(reminders_data), 200
 
-@app.route('/delete_reminder/<int:reminder_id>', methods=['
+@app.route('/delete_reminder/<int:reminder_id>', methods=['DELETE'])
+def delete_reminder_api(reminder_id):
+    user_id = request.args.get('user_id')
+
+    if not user_id:
+        return jsonify({"success": False, "message": "User ID tidak ditemukan."}), 400
+
+    cursor = get_db().execute('DELETE FROM reminders WHERE id = ? AND user_id = ?', (reminder_id, user_id))
+    get_db().commit()
+    if cursor.rowcount > 0:
+        return jsonify({"success": True, "message": "Pengingat berhasil dihapus."}), 200
+    else:
+        return jsonify({"success": False, "message": "Pengingat tidak ditemukan atau Anda tidak memiliki izin untuk menghapusnya."}), 404
+
+# --- Scheduler untuk Mengecek Pengingat Jatuh Tempo ---
+def check_reminders_job():
+    with app.app_context():
+        now_local = datetime.now(LOCAL_TIMEZONE)
+        
+        reminders = query_db('SELECT * FROM reminders WHERE notified = 0 ORDER BY datetime ASC')
+
+        for reminder_data in reminders:
+            reminder_dt = datetime.fromisoformat(reminder_data['datetime'])
+            
+            if reminder_dt.tzinfo is None and now_local.tzinfo is not None:
+                reminder_dt = LOCAL_TIMEZONE.localize(reminder_dt.replace(tzinfo=None))
+            elif reminder_dt.tzinfo is not None and now_local.tzinfo is None:
+                now_local = LOCAL_TIMEZONE.localize(now_local.replace(tzinfo=None))
+            
+            if now_local >= reminder_dt:
+                print(f"Mengirim notifikasi (simulasi di log) untuk: {reminder_data['event']} (User: {reminder_data['user_id']}) pada {reminder_dt}")
+                
+                if reminder_data['repeat_type'] == 'none':
+                    update_db('UPDATE reminders SET notified = 1 WHERE id = ?', (reminder_data['id'],))
+                else:
+                    next_datetime = reminder_dt
+                    repeat_interval = reminder_data['repeat_interval']
+
+                    if reminder_data['repeat_type'] == 'yearly':
+                        next_datetime = next_datetime.replace(year=next_datetime.year + repeat_interval, tzinfo=next_datetime.tzinfo)
+                    elif reminder_data['repeat_type'] == 'monthly_interval':
+                        next_datetime = add_months(next_datetime, repeat_interval)
+                    
+                    while next_datetime <= now_local:
+                        if reminder_data['repeat_type'] == 'yearly':
+                            next_datetime = next_datetime.replace(year=next_datetime.year + repeat_interval, tzinfo=next_datetime.tzinfo)
+                        elif reminder_data['repeat_type'] == 'monthly_interval':
+                            next_datetime = add_months(next_datetime, repeat_interval)
+                    
+                    update_db('UPDATE reminders SET datetime = ?, notified = 0 WHERE id = ?', 
+                              (next_datetime.isoformat(), reminder_data['id']))
+        get_db().commit()
+    
+scheduler = BackgroundScheduler()
+scheduler.add_job(check_reminders_job, IntervalTrigger(seconds=30), id='check_reminders', replace_existing=True)
+
+if __name__ != '__main__':
+    scheduler.start()
+    print("Scheduler started in background for production.")
+
+# --- Main Run Block ---
+if __name__ == '__main__':
+    if not os.path.exists(DATABASE):
+        from database import init_db
+        init_db()
+    
+    scheduler.start()
+    print("Scheduler started for local development.")
+    
+    port = int(os.environ.get('PORT', 5000))
+    app.run(debug=True, host='0.0.0.0', port=port)
