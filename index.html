@@ -16,10 +16,28 @@
             <button id="addReminderBtn">Tambah Pengingat</button>
         </div>
 
-        <div class="list-section">
-            <h2>Daftar Pengingat</h2>
-            <div id="reminderList" class="scrollable">
-                <p class="loading">Memuat pengingat...</p>
+        <div class="main-content">
+            <div class="left-panel">
+                <h2>Daftar Pengingat</h2>
+                <div id="reminderList" class="scrollable">
+                    <p class="loading">Memuat pengingat...</p>
+                </div>
+            </div>
+
+            <div class="right-panel">
+                <h2>Lihat Jadwal di Kalender:</h2>
+                <div class="calendar-nav">
+                    <button id="prevMonthBtn">&lt;</button>
+                    <span id="currentMonthYear"></span>
+                    <button id="nextMonthBtn">&gt;</button>
+                </div>
+                <div id="calendarGrid" class="calendar-grid">
+                    </div>
+                
+                <h3>Pengingat pada Tanggal Terpilih:</h3>
+                <div id="selectedDateReminders" class="scrollable">
+                    <p class="no-selection">Pilih tanggal di kalender untuk melihat jadwal.</p>
+                </div>
             </div>
         </div>
     </div>
