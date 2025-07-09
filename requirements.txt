@@ -2,9 +2,4 @@ flask
 gunicorn
 pytz
 Flask-APScheduler
-spacy==3.5.0 # Atau versi terbaru yang kompatibel
-# Anda perlu model bahasa. Pilih salah satu:
-# Untuk Bahasa Indonesia:
-https://github.com/explosion/spacy-models/releases/download/id_core_news_sm-3.5.0/id_core_news_sm-3.5.0.tar.gz#egg=id_core_news_sm
-# ATAU untuk Bahasa Inggris (lebih umum jika model ID kurang):
-# https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.5.0/en_core_web_sm-3.5.0.tar.gz#egg=en_core_web_sm
+spacy==3.5.0
