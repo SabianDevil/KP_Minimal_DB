@@ -1,47 +1,54 @@
 body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background-color: #f7f9fc; /* Latar belakang sangat terang */
-    color: #34495e; /* Teks abu-abu kebiruan */
+    font-family: 'Open Sans', sans-serif;
+    background-color: #fce4ec; /* Light pink background */
+    color: #4a148c; /* Deep purple text */
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    height: 100vh;
+    min-height: 100vh;
     margin: 0;
     text-align: center;
+    padding: 25px;
+    box-sizing: border-box;
 }
 
 h1 {
-    color: #2c3e50; /* Judul lebih gelap */
-    margin-bottom: 15px;
+    color: #880e4f; /* Darker pink for heading */
+    margin-bottom: 25px;
+    font-size: 2.7em;
+    text-shadow: 1px 1px 3px rgba(0,0,0,0.15);
 }
 
 p {
-    font-size: 1.1em;
-    line-height: 1.6;
-    max-width: 600px;
+    font-size: 1.25em;
+    line-height: 1.7;
+    max-width: 750px;
+    margin-bottom: 40px;
 }
 
 button {
-    padding: 14px 28px;
-    font-size: 17px;
-    background-color: #3498db; /* Biru cerah */
+    padding: 16px 32px;
+    font-size: 1.2em;
+    background-color: #e91e63; /* Pink button */
     color: white;
     border: none;
-    border-radius: 6px;
+    border-radius: 30px;
     cursor: pointer;
-    margin-top: 35px;
-    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.25);
     transition: background-color 0.3s ease, transform 0.2s ease, box-shadow 0.3s ease;
+    outline: none;
+    font-weight: bold;
+    letter-spacing: 0.5px;
 }
 
 button:hover {
-    background-color: #2980b9; /* Biru lebih gelap saat hover */
-    transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+    background-color: #c2185b; /* Darker pink on hover */
+    transform: translateY(-4px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
 }
 
 button:active {
     transform: translateY(0);
-    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25);
 }
