@@ -2,7 +2,6 @@ import os
 from datetime import datetime, timedelta
 import re
 import pytz 
-import uuid 
 
 
 # --- KONFIGURASI ZONA WAKTU ---
@@ -312,7 +311,6 @@ def format_timezone_display(dt_object):
     return "" 
 
 # --- Fungsi Utama Skrip ---
-# Ini adalah bagian yang akan dieksekusi saat skrip dijalankan.
 if __name__ == "__main__":
     print("--- Aplikasi AI Pengingat (Backend Saja) Dimulai ---")
     
@@ -322,9 +320,7 @@ if __name__ == "__main__":
         "Rapat tim jam 14:30 hari ini",
         "Telepon ibu dalam 30 menit",
         "Bayar tagihan listrik tanggal 25 Juli 2025",
-        "Presentasi proyek lusa jam 10 pagi",
-        "Meeting dengan Pak Budi minggu depan hari rabu jam 15:00",
-        "Jadwal penerbangan 17 Agustus 2025 jam 10 malam EST"
+        "Presentasi proyek lusa jam 10 pagi"
     ]
 
     for i, text in enumerate(reminder_texts):
