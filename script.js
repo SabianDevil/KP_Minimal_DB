@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const prevMonthBtn = document.getElementById('prevMonthBtn');
     const nextMonthBtn = document.getElementById('nextMonthBtn');
     const selectedDateRemindersDiv = document.getElementById('selectedDateReminders');
+    const realtimeClockDiv = document.getElementById('realtimeClock'); // Ambil elemen jam
 
     let currentMonth = new Date().getMonth();
     let currentYear = new Date().getFullYear();
@@ -20,10 +21,23 @@ document.addEventListener('DOMContentLoaded', function() {
         return monthNames[monthIndex];
     };
 
-    const getDayName = (dayIndex) => {
+    const getDayName = (dayIndex) => { // Fungsi ini sebenarnya tidak digunakan lagi di kalender, tapi bisa disimpan
         const dayNames = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
         return dayNames[dayIndex];
     };
+
+    // Fungsi untuk memperbarui jam dan tanggal realtime
+    function updateRealtimeClock() {
+        const now = new Date();
+        // Opsi format untuk tanggal dan waktu
+        const optionsDate = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+        const optionsTime = { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }; // Format 24 jam
+
+        const formattedDate = now.toLocaleDateString('id-ID', optionsDate); // Format tanggal Indonesia
+        const formattedTime = now.toLocaleTimeString('id-ID', optionsTime); // Format waktu Indonesia
+
+        realtimeClockDiv.textContent = `${formattedDate}, ${formattedTime} WIB`; // Tambahkan "WIB" secara manual
+    }
 
     // --- Core Reminder List Functions ---
     async function fetchReminders() {
@@ -161,7 +175,6 @@ document.addEventListener('DOMContentLoaded', function() {
         for (let day = 1; day <= daysInMonth; day++) {
             const dayElement = document.createElement('div');
             dayElement.className = 'calendar-day';
-            // dayElement.textContent = day; // HAPUS BARIS INI UNTUK MENGHILANGKAN DUPLIKASI
             dayElement.dataset.date = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`; // YYYY-MM-DD
             dayElement.onclick = () => selectCalendarDay(dayElement);
 
@@ -188,7 +201,7 @@ document.addEventListener('DOMContentLoaded', function() {
             // Mark the selected day if it matches
             if (selectedCalendarDate && dayElement.dataset.date === selectedCalendarDate) {
                 dayElement.classList.add('selected');
-                showRemindersForSelectedDate(selectedCalendarDate);
+                // Tidak perlu panggil showRemindersForSelectedDate di sini, karena sudah dipanggil di selectCalendarDay
             }
 
             calendarGrid.appendChild(dayElement);
@@ -282,6 +295,9 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // --- Initialization ---
+    updateRealtimeClock(); // Panggil pertama kali saat halaman dimuat
+    setInterval(updateRealtimeClock, 1000); // Perbarui setiap 1 detik
+
     fetchReminders(); // Initial load of general reminder list
     renderCalendar(currentMonth, currentYear); // Initial render of calendar
 
