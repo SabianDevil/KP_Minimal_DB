@@ -1,7 +1,16 @@
 import os
+from flask import Flask, request, jsonify, render_template
 from datetime import datetime, timedelta
 import re
-import pytz # Diperlukan untuk penanganan zona waktu
+import pytz 
+import uuid # Diperlukan untuk ID sementara jika tidak pakai DB
+
+
+# --- INISIALISASI APLIKASI FLASK ---
+app = Flask(__name__)
+
+# --- PENYIMPANAN PENGINGAT DI MEMORI (TIDAK PERSISTEN) ---
+reminders_in_memory = []
 
 # --- KONFIGURASI ZONA WAKTU ---
 LOCAL_TIMEZONE = pytz.timezone('Asia/Jakarta') 
@@ -18,8 +27,50 @@ TIMEZONE_MAP = {
     "gmt-7": "Etc/GMT+7"
 }
 
-# --- FUNGSI NLP: extract_schedule (Inti AI) ---
-# Ini adalah fungsi yang mengurai teks untuk menemukan jadwal.
+# --- MODEL PENGINGAT (VERSI SIMPLIFIKASI UNTUK MEMORI) ---
+class Reminder:
+    def __init__(self, id, user_id, text, reminder_time, created_at, is_completed, repeat_type, repeat_interval):
+        self.id = id
+        self.user_id = user_id
+        self.text = text
+        self.reminder_time = reminder_time # datetime object
+        self.created_at = created_at
+        self.is_completed = is_completed
+        self.repeat_type = repeat_type
+        self.repeat_interval = repeat_interval
+
+    def to_dict(self):
+        reminder_time_iso = None
+        if self.reminder_time:
+            try:
+                reminder_time_iso = self.reminder_time.isoformat()
+            except Exception as dt_e:
+                print(f"ERROR in to_dict (reminder_time): Failed to isoformat {self.reminder_time}: {dt_e}")
+                reminder_time_iso = self.reminder_time.strftime('%Y-%m-%dT%H:%M:%S')
+
+        created_at_iso = None
+        if self.created_at:
+            try:
+                created_at_iso = self.created_at.isoformat()
+            except Exception as dt_e:
+                print(f"ERROR in to_dict (created_at): Failed to isoformat {self.created_at}: {dt_e}")
+                created_at_iso = self.created_at.strftime('%Y-%m-%dT%H:%M:%S')
+
+        return {
+            "id": str(self.id) if self.id else None, 
+            "user_id": str(self.user_id) if self.user_id else "", 
+            "text": str(self.text) if self.text else "N/A", 
+            "reminder_time": reminder_time_iso,
+            "created_at": created_at_iso,
+            "is_completed": bool(self.is_completed), 
+            "repeat_type": str(self.repeat_type) if self.repeat_type else "none", 
+            "repeat_interval": int(self.repeat_interval) if self.repeat_interval is not None else 0 
+        }
+
+
+# --- FUNGSI NLP: extract_schedule (disimplifikasi) ---
+# Hanya menangani 'hari ini', 'besok', 'X jam/menit kedepan' dan jam numerik.
+# Tanpa zona waktu atau waktu sholat kompleks.
 def extract_schedule(text):
     original_text = text.lower()
     processed_text = original_text 
@@ -27,6 +78,10 @@ def extract_schedule(text):
     now_local = datetime.now(LOCAL_TIMEZONE) 
     scheduled_datetime_aware = now_local 
     
+    # --- PERBAIKAN DI SINI: Definisikan default_hour dan default_minute di awal ---
+    default_hour, default_minute = 9, 0 
+    # --- AKHIR PERBAIKAN ---
+
     target_tz = LOCAL_TIMEZONE 
     tz_matched = False
     tz_pattern_parts = [re.escape(k) for k in TIMEZONE_MAP.keys()]
@@ -45,44 +100,22 @@ def extract_schedule(text):
     repeat_type = "none" # Fitur pengulangan tidak aktif di versi ini
     repeat_interval = 0
 
-    found_explicit_date = False
-
+    # 1. Ekstraksi Tanggal Relatif
     date_keywords_map = {
         "hari ini": now_local.date(),
         "besok": (now_local + timedelta(days=1)).date(),
         "lusa": (now_local + timedelta(days=2)).date(),
-        "minggu depan": (now_local + timedelta(weeks=1)).date(),
-        "bulan depan": (now_local.replace(day=1) + timedelta(days=32)).replace(day=now_local.day).date()
     }
     
+    found_explicit_date = False
     for keyword, date_obj in date_keywords_map.items():
         if keyword in processed_text:
             scheduled_datetime_aware = scheduled_datetime_aware.replace(year=date_obj.year, month=date_obj.month, day=date_obj.day, tzinfo=scheduled_datetime_aware.tzinfo)
             processed_text = processed_text.replace(keyword, '').strip()
             found_explicit_date = True
             break
-    
-    day_of_week_map = {
-        "senin": 0, "selasa": 1, "rabu": 2, "kamis": 3, "jumat": 4, "sabtu": 5, "minggu": 6
-    }
-    if not found_explicit_date:
-        for day_name, day_num in day_of_week_map.items():
-            if f"minggu depan {day_name}" in processed_text or f"depan {day_name}" in processed_text:
-                days_ahead = (day_num - now_local.weekday() + 7) % 7 + 7
-                if days_ahead == 0: days_ahead = 7
-                target_date = now_local.date() + timedelta(days=days_ahead)
-                scheduled_datetime_aware = scheduled_datetime_aware.replace(year=target_date.year, month=target_date.month, day=target_date.day, tzinfo=scheduled_datetime_aware.tzinfo)
-                processed_text = processed_text.replace(f"minggu depan {day_name}", "").replace(f"depan {day_name}", "").strip()
-                found_explicit_date = True
-                break
-            elif day_name in processed_text:
-                days_ahead = (day_num - now_local.weekday() + 7) % 7
-                if days_ahead == 0: days_ahead = 7
-                target_date = now_local.date() + timedelta(days=days_ahead)
-                scheduled_datetime_aware = scheduled_datetime_aware.replace(year=target_date.year, month=target_date.month, day=target_date.day, tzinfo=scheduled_datetime_aware.tzinfo)
-                processed_text = processed_text.replace(day_name, "").strip()
-                found_explicit_date = True
-                
+        
+    # Regex untuk tanggal spesifik (dd MonthYYYY atau dd/mm/YYYY)
     if not found_explicit_date:
         date_pattern = r'\b(\d{1,2}) (januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember) (\d{4})\b|\b(\d{1,2})/(\d{1,2})/(\d{4})\b'
         found_date_match = re.search(date_pattern, processed_text, re.IGNORECASE)
@@ -109,6 +142,7 @@ def extract_schedule(text):
             except (ValueError, TypeError):
                 pass
     
+    # 2. Ekstraksi Waktu Relatif/Numerik
     found_time_set_by_match = False
 
     relative_time_pattern = r'\b(dalam\s+)?(\d+)\s*(jam|menit)\s*(lagi|ke\s+depan)?\b'
@@ -125,33 +159,6 @@ def extract_schedule(text):
         found_time_set_by_match = True
         processed_text = re.sub(relative_time_pattern, '', processed_text, flags=re.IGNORECASE).strip()
     
-    waktu_sholat_map = {
-        "subuh": "05:00",
-        "dzuhur": "12:00",
-        "ashar": "15:00",
-        "maghrib": "18:00",
-        "isya": "19:30"
-    }
-    
-    if not found_time_set_by_match:
-        for sholat_name, sholat_time_str in waktu_sholat_map.items():
-            if f"setelah {sholat_name}" in processed_text or sholat_name in processed_text:
-                try:
-                    hour, minute = map(int, sholat_time_str.split(':'))
-                    temp_time = scheduled_datetime_aware.replace(hour=hour, minute=minute, second=0, microsecond=0, tzinfo=scheduled_datetime_aware.tzinfo)
-                    if f"setelah {sholat_name}" in processed_text:
-                        temp_time += timedelta(minutes=30)
-                    
-                    if temp_time < now_local and temp_time.date() == scheduled_datetime_aware.date():
-                        temp_time += timedelta(days=1)
-
-                    scheduled_datetime_aware = temp_time
-                    found_time_set_by_match = True
-                    processed_text = processed_text.replace(f"setelah {sholat_name}", "").replace(sholat_name, "").strip()
-                    break
-                except ValueError:
-                    pass
-
     if not found_time_set_by_match:
         time_pattern = r'\b(jam |pukul )?(\d{1,2}([\.:]\d{2})?)\s*(pagi|siang|sore|malam|am|pm)?\b'
         found_time_match = re.search(time_pattern, processed_text, re.IGNORECASE)
@@ -196,16 +203,17 @@ def extract_schedule(text):
             except (ValueError, TypeError):
                 pass
 
-    if not found_time_set_by_match:
+    if not found_time_set_by_match: # Jika tidak ada waktu spesifik, default ke jam 9 pagi besok
         temp_time = scheduled_datetime_aware.replace(hour=default_hour, minute=default_minute, second=0, microsecond=0, tzinfo=scheduled_datetime_aware.tzinfo)
         if temp_time < now_local and temp_time.date() == scheduled_datetime_aware.date():
             temp_time += timedelta(days=1)
         scheduled_datetime_aware = temp_time
 
 
-    event_description = processed_text 
+    # 3. Ekstraksi Deskripsi Event
+    # Stopwords dihilangkan untuk kesederhanaan
     stopwords = ['ingatkan', 'saya', 'untuk', 'pada', 'di', 'tanggal', 'pukul', 'jam', 'paling lambat', 'mengingatkan', 'setelah', 'depan', 'setiap', 'tiap', 'ke depan', 'menit', 'lagi', 'dalam', 'kedepan', 'isya', 'subuh', 'dzuhur', 'ashar', 'maghrib', 'malam', 'sore', 'siang', 'pagi', 'minggu', 'senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu', 'bulan', 'tahun']
-    words = event_description.split()
+    words = processed_text.split()
     final_event_description = ' '.join([word for word in words if word.lower() not in stopwords])
     final_event_description = final_event_description.replace("  ", " ").strip()
 
@@ -213,6 +221,7 @@ def extract_schedule(text):
         final_event_description = "Pengingat"
 
 
+    # 4. Validasi Akhir
     tolerance = timedelta(seconds=2)
     
     if scheduled_datetime_aware < now_local - tolerance:
@@ -223,22 +232,9 @@ def extract_schedule(text):
         return {"event": final_event_description, "datetime": scheduled_datetime_aware, "repeat_type": repeat_type, "repeat_interval": repeat_interval}
     return None
 
-def format_timezone_display(dt_object):
-    if dt_object is None:
-        return ""
-    tz_name_full = dt_object.tzname()
-    if tz_name_full:
-        if "Western Indonesia Standard Time" in tz_name_full:
-            return "WIB"
-        elif "Central Indonesia Standard Time" in tz_name_full:
-            return "WITA"
-        elif "Eastern Indonesia Standard Time" in tz_name_full:
-            return "WIT"
-        return tz_name_full
-    return "" 
 
 # --- Fungsi Utama Skrip ---
-if __name__ == '__main__':
+if __name__ == "__main__":
     print("--- Aplikasi AI Pengingat (Backend Saja) Dimulai ---")
     
     # Contoh teks pengingat yang akan diproses
@@ -247,9 +243,7 @@ if __name__ == '__main__':
         "Rapat tim jam 14:30 hari ini",
         "Telepon ibu dalam 30 menit",
         "Bayar tagihan listrik tanggal 25 Juli 2025",
-        "Presentasi proyek lusa jam 10 pagi",
-        "Meeting dengan Pak Budi minggu depan hari rabu jam 15:00",
-        "Jadwal penerbangan 17 Agustus 2025 jam 10 malam EST"
+        "Presentasi proyek lusa jam 10 pagi"
     ]
 
     for i, text in enumerate(reminder_texts):
