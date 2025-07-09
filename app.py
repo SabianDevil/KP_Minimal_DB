@@ -88,6 +88,8 @@ def parse_single_schedule_fragment(text_fragment, now_local_context):
     scheduled_datetime_aware = now_local_context
     target_tz = LOCAL_TIMEZONE
     tz_matched = False
+    time_extracted = False # Flag baru untuk melacak apakah waktu sudah diekstrak
+    date_extracted = False # Flag baru untuk melacak apakah tanggal sudah diekstrak
     
     # --- 1. Ekstraksi Zona Waktu ---
     tz_pattern_parts = [re.escape(k) for k in TIMEZONE_MAP.keys()]
@@ -115,6 +117,7 @@ def parse_single_schedule_fragment(text_fragment, now_local_context):
         elif unit == "menit":
             scheduled_datetime_aware = now_local_context + timedelta(minutes=value)
         processed_text = re.sub(relative_time_pattern, '', processed_text, flags=re.IGNORECASE).strip()
+        time_extracted = True
         
     # Ekstraksi waktu sholat
     waktu_sholat_map = {
@@ -132,6 +135,7 @@ def parse_single_schedule_fragment(text_fragment, now_local_context):
                 if f"setelah {sholat_name}" in original_text_lower:
                     scheduled_datetime_aware += timedelta(minutes=30)
                     processed_text = processed_text.replace(f"setelah {sholat_name}", "").strip()
+                time_extracted = True
                 break
             except ValueError:
                 pass
@@ -160,22 +164,15 @@ def parse_single_schedule_fragment(text_fragment, now_local_context):
                 raise ValueError("Invalid time")
             
             temp_datetime = scheduled_datetime_aware.replace(hour=hour_extracted, minute=minute_extracted, second=0, microsecond=0, tzinfo=scheduled_datetime_aware.tzinfo)
+            # Jika waktu yang diekstrak sudah lewat hari ini, majukan ke besok
             if temp_datetime < now_local_context and temp_datetime.date() == scheduled_datetime_aware.date():
                 temp_datetime += timedelta(days=1)
             scheduled_datetime_aware = temp_datetime
             processed_text = re.sub(time_pattern_regex, '', processed_text, flags=re.IGNORECASE).strip()
+            time_extracted = True
         except (ValueError, TypeError):
             pass
     
-    # Default ke 9 pagi jika tidak ada waktu yang terdeteksi
-    if scheduled_datetime_aware.time() == now_local_context.time() and scheduled_datetime_aware.date() == now_local_context.date():
-        default_hour, default_minute = 9, 0
-        temp_time = scheduled_datetime_aware.replace(hour=default_hour, minute=default_minute, second=0, microsecond=0, tzinfo=scheduled_datetime_aware.tzinfo)
-        if temp_time < now_local_context:
-            temp_time += timedelta(days=1)
-        scheduled_datetime_aware = temp_time
-
-
     # Ekstraksi keyword tanggal (hari ini, besok, dll.)
     date_keywords_map = {
         "hari ini": now_local_context.date(), "besok": (now_local_context + timedelta(days=1)).date(),
@@ -186,6 +183,7 @@ def parse_single_schedule_fragment(text_fragment, now_local_context):
         if keyword in original_text_lower:
             scheduled_datetime_aware = scheduled_datetime_aware.replace(year=date_obj.year, month=date_obj.month, day=date_obj.day, tzinfo=scheduled_datetime_aware.tzinfo)
             processed_text = re.sub(re.escape(keyword), '', processed_text, flags=re.IGNORECASE).strip()
+            date_extracted = True
             break
         
     # Ekstraksi hari dalam seminggu
@@ -195,18 +193,15 @@ def parse_single_schedule_fragment(text_fragment, now_local_context):
     for day_name, day_num in day_of_week_map.items():
         if day_name in original_text_lower:
             days_ahead = (day_num - now_local_context.weekday() + 7) % 7
-            if days_ahead == 0 and scheduled_datetime_aware.date() == now_local_context.date() and scheduled_datetime_aware.time() < now_local_context.time():
-                days_ahead = 7
-            elif days_ahead == 0 and scheduled_datetime_aware.date() == now_local_context.date() and scheduled_datetime_aware.time() >= now_local_context.time():
-                pass
-            elif days_ahead == 0 and scheduled_datetime_aware.date() != now_local_context.date():
-                pass
-            elif days_ahead == 0:
-                 days_ahead = 7
             
-            target_date = (now_local_context.date() if scheduled_datetime_aware.date() == now_local_context.date() else scheduled_datetime_aware.date()) + timedelta(days=days_ahead)
+            # Jika hari yang disebutkan adalah hari ini, dan waktu sudah lewat, majukan ke minggu depan
+            if days_ahead == 0 and scheduled_datetime_aware.time() < now_local_context.time() and not time_extracted:
+                days_ahead = 7
+            
+            target_date = scheduled_datetime_aware.date() + timedelta(days=days_ahead)
             scheduled_datetime_aware = scheduled_datetime_aware.replace(year=target_date.year, month=target_date.month, day=target_date.day, tzinfo=scheduled_datetime_aware.tzinfo)
             processed_text = re.sub(re.escape(day_name), '', processed_text, flags=re.IGNORECASE).strip()
+            date_extracted = True
             break
 
     # Ekstraksi tanggal spesifik (DD Month YYYY atau DD/MM/YYYY)
@@ -231,12 +226,24 @@ def parse_single_schedule_fragment(text_fragment, now_local_context):
             if parsed_date:
                 scheduled_datetime_aware = scheduled_datetime_aware.replace(year=parsed_date.year, month=parsed_date.month, day=parsed_date.day, tzinfo=scheduled_datetime_aware.tzinfo)
                 processed_text = re.sub(date_pattern_regex, '', processed_text, flags=re.IGNORECASE).strip()
+                date_extracted = True
         except (ValueError, TypeError):
             pass
+
+    # Default ke 9 pagi jika TIDAK ADA waktu yang terdeteksi sama sekali
+    if not time_extracted:
+        default_hour, default_minute = 9, 0
+        temp_time = scheduled_datetime_aware.replace(hour=default_hour, minute=default_minute, second=0, microsecond=0, tzinfo=scheduled_datetime_aware.tzinfo)
+        # Jika default 9 AM adalah di masa lalu untuk hari ini, majukan ke besok
+        if temp_time < now_local_context and not date_extracted: # Hanya majukan jika tanggal tidak spesifik
+            temp_time += timedelta(days=1)
+        scheduled_datetime_aware = temp_time
+        time_extracted = True # Set true karena default sudah diterapkan
 
     # --- 3. Ekstraksi Pengulangan & Metadata Terstruktur (HANYA Regex) ---
     repeat_type = "none"
     repeat_interval = 0
+    metadata = {} # Inisialisasi metadata di awal
 
     # Pola pengulangan yang sudah ada
     monthly_repeat_pattern = r'(?:setiap|tiap)\s*(\d+)\s*bulan|(?:(\d+)\s*bulan\s*kedepan)'
@@ -276,16 +283,13 @@ def parse_single_schedule_fragment(text_fragment, now_local_context):
             processed_text = processed_text.replace(f"{day_name_key}s", "").strip()
             break
         
-    # Ekstraksi Metadata (menggunakan regex dan membersihkan teks)
-    metadata = {}
-    
     # Pola untuk metadata spesifik
     metadata_patterns = {
         "notes": r'(?:notes|catatan):\s*["“](.*?)[”"]|(?:notes|catatan):\s*(.+?)(?=\s*(?:mood:|suasana hati:|suggestion:|saran:|$))',
         "mood": r'(?:mood|suasana hati):\s*([^\s]+)(?=\s*(?:notes:|catatan:|suggestion:|saran:|$))',
         "suggestion": r'(?:suggestion|saran):\s*(.+)',
         # Pola untuk aktivitas/item yang Anda sebutkan
-        "activity_type": r'(gym|online course|reading|groceries|in-office day|standup)', # Kata kunci untuk jenis aktivitas utama
+        "activity_type": r'(gym|online course|reading|groceries|in-office day|standup|rapat|class|meeting)', # Kata kunci untuk jenis aktivitas utama
         "favorite_meals": r'(?:favorite meals|makanan favorit):\s*(.+)',
         "coffee_preference": r'(?:coffee|kopi):\s*(.+)'
     }
@@ -317,17 +321,24 @@ def parse_single_schedule_fragment(text_fragment, now_local_context):
     if 'activity_type' in metadata: # Prioritaskan dari metadata activity_type
         event_title = metadata['activity_type'].capitalize()
     elif clean_remaining_text: # Fallback ke sisa teks setelah ekstraksi
-        event_title = clean_remaining_text.split(' ')[0].capitalize() # Ambil kata pertama
+        # Hindari mengambil kata-kata yang mungkin sisa dari waktu/tanggal yang tidak terdeteksi sempurna
+        # Filter kata-kata umum yang sering tersisa dan bukan event
+        common_filler_words = ["untuk", "saya", "di", "pada", "jam", "pukul", "lagi", "kedepan"]
+        potential_event_words = [word for word in clean_remaining_text.split() if word.lower() not in common_filler_words]
+        if potential_event_words:
+            event_title = potential_event_words[0].capitalize()
+        else:
+            event_title = "Pengingat" # Jika tidak ada kata yang cocok
     
     # Pastikan event_title tidak kosong atau hanya angka
     if not event_title or re.match(r'^\d+$', event_title):
         event_title = "Pengingat"
-        if clean_remaining_text and clean_remaining_text != "pengingat":
+        if clean_remaining_text and clean_remaining_text.lower() != "pengingat":
             metadata["description_fallback"] = clean_remaining_text # Simpan sebagai deskripsi umum di metadata
 
 
     # --- 4. Validasi Akhir dan Konversi Zona Waktu ---
-    tolerance = timedelta(seconds=2)
+    tolerance = timedelta(seconds=5) # Beri sedikit toleransi untuk waktu sekarang
     
     if tz_matched: 
         scheduled_datetime_naive_temp = scheduled_datetime_aware.replace(tzinfo=None)
@@ -336,9 +347,30 @@ def parse_single_schedule_fragment(text_fragment, now_local_context):
     else:
         scheduled_datetime_final = scheduled_datetime_aware 
 
+    # Jika waktu yang dihasilkan sudah lewat dari sekarang (dengan toleransi), batalkan atau majukan
+    # Kecuali jika tanggalnya sudah spesifik dan di masa depan
     if scheduled_datetime_final < now_local_context - tolerance:
-        return None
-    
+        # Jika ada tanggal spesifik yang diekstrak dan itu di masa lalu, biarkan itu
+        # Tapi jika tidak ada tanggal spesifik dan waktu sudah lewat, majukan ke besok
+        if not date_extracted:
+            scheduled_datetime_final += timedelta(days=1)
+        else:
+            # Jika tanggal spesifik diekstrak dan itu di masa lalu, ini adalah pengingat yang terlewat
+            # Untuk saat ini, kita akan mengembalikannya sebagai None atau membiarkannya.
+            # Untuk tujuan pengingat, kita ingin yang akan datang, jadi kita bisa kembalikan None
+            # atau majukan jika itu masuk akal.
+            # Untuk kasus ini, jika tanggal spesifik sudah diekstrak, kita asumsikan itu yang diinginkan
+            # dan tidak perlu majukan ke besok secara otomatis jika sudah di masa lalu.
+            # Namun, API kita akan menolak tanggal di masa lalu, jadi lebih baik kembalikan None.
+            # Atau, jika hanya waktu yang spesifik (misal, "jam 9 pagi") dan tanggal tidak, majukan.
+            if not time_extracted and not date_extracted: # Jika tidak ada waktu/tanggal spesifik, dan default 9 pagi di masa lalu
+                 return None # Jangan buat pengingat di masa lalu
+            elif time_extracted and not date_extracted: # Jika hanya waktu spesifik, dan sudah lewat hari ini
+                 scheduled_datetime_final += timedelta(days=1) # Majukan ke besok
+            else: # Ada tanggal spesifik dan itu di masa lalu
+                return None # Jangan buat pengingat di masa lalu
+            
+
     if scheduled_datetime_final:
         return {
             "event": event_title,
