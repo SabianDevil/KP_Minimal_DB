@@ -1,18 +1,9 @@
 import os
-from flask import Flask, request, jsonify, render_template
 from datetime import datetime, timedelta
 import re
 import pytz 
 import uuid 
 
-
-# --- INISIALISASI APLIKASI FLASK ---
-app = Flask(__name__)
-
-# --- PENYIMPANAN PENGINGAT DI MEMORI (TIDAK PERSISTEN) ---
-# Ini akan menyimpan pengingat hanya selama aplikasi berjalan.
-# Data akan hilang saat aplikasi di-restart (misalnya saat deployment baru).
-reminders_in_memory = []
 
 # --- KONFIGURASI ZONA WAKTU ---
 LOCAL_TIMEZONE = pytz.timezone('Asia/Jakarta') 
@@ -29,8 +20,9 @@ TIMEZONE_MAP = {
     "gmt-7": "Etc/GMT+7"
 }
 
-# --- MODEL PENGINGAT (VERSI SIMPLIFIKASI UNTUK MEMORI) ---
-class Reminder:
+# --- MODEL PENGINGAT (Sederhana untuk memori, bukan ORM) ---
+# Ini bukan model SQLAlchemy atau ORM. Hanya kelas Python untuk menampung data.
+class ReminderData:
     def __init__(self, id, user_id, text, reminder_time, created_at, is_completed, repeat_type, repeat_interval):
         self.id = id
         self.user_id = user_id
@@ -71,6 +63,7 @@ class Reminder:
 
 
 # --- FUNGSI NLP: extract_schedule ---
+# Ini adalah inti AI Anda yang mengurai teks untuk menemukan jadwal.
 def extract_schedule(text):
     original_text = text.lower()
     processed_text = original_text 
@@ -329,7 +322,9 @@ if __name__ == "__main__":
         "Rapat tim jam 14:30 hari ini",
         "Telepon ibu dalam 30 menit",
         "Bayar tagihan listrik tanggal 25 Juli 2025",
-        "Presentasi proyek lusa jam 10 pagi"
+        "Presentasi proyek lusa jam 10 pagi",
+        "Meeting dengan Pak Budi minggu depan hari rabu jam 15:00",
+        "Jadwal penerbangan 17 Agustus 2025 jam 10 malam EST"
     ]
 
     for i, text in enumerate(reminder_texts):
