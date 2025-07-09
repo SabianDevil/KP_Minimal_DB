@@ -161,7 +161,7 @@ document.addEventListener('DOMContentLoaded', function() {
         for (let day = 1; day <= daysInMonth; day++) {
             const dayElement = document.createElement('div');
             dayElement.className = 'calendar-day';
-            dayElement.textContent = day;
+            // dayElement.textContent = day; // HAPUS BARIS INI UNTUK MENGHILANGKAN DUPLIKASI
             dayElement.dataset.date = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`; // YYYY-MM-DD
             dayElement.onclick = () => selectCalendarDay(dayElement);
 
