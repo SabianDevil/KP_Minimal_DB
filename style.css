@@ -4,7 +4,7 @@ body {
     color: #333;
     display: flex;
     justify-content: center;
-    align-items: flex-start; /* Align to top for better layout */
+    align-items: flex-start;
     min-height: 100vh;
     margin: 0;
     padding: 20px;
@@ -17,7 +17,7 @@ body {
     border-radius: 12px;
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
     width: 100%;
-    max-width: 700px;
+    max-width: 1200px; /* Increased max-width for calendar */
     text-align: center;
 }
 
@@ -28,16 +28,18 @@ h1 {
     font-weight: 700;
 }
 
-h2 {
+h2, h3 {
     color: #0288d1;
     margin-top: 30px;
     margin-bottom: 15px;
     font-size: 1.8em;
     font-weight: 600;
+    text-align: left; /* Align section titles to left */
 }
 
 .input-section {
     margin-bottom: 25px;
+    text-align: left;
 }
 
 label {
@@ -82,18 +84,28 @@ button:active {
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
 }
 
-.list-section {
-    border-top: 1px solid #eee;
-    padding-top: 20px;
+/* --- Layout for Left and Right Panels --- */
+.main-content {
+    display: flex;
+    gap: 20px; /* Space between panels */
+    margin-top: 20px;
+}
+
+.left-panel, .right-panel {
+    flex: 1; /* Each panel takes equal width */
+    background-color: #f9f9f9;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.05);
 }
 
 .scrollable {
-    max-height: 300px;
+    max-height: 350px; /* Adjusted height for lists */
     overflow-y: auto;
     border: 1px solid #e0e0e0;
     border-radius: 8px;
     padding: 10px;
-    background-color: #f9f9f9;
+    background-color: #fff;
     text-align: left;
 }
 
@@ -108,6 +120,7 @@ button:active {
     align-items: center;
     word-wrap: break-word;
     white-space: normal;
+    font-size: 0.95em;
 }
 
 .reminder-item.notified {
@@ -125,7 +138,7 @@ button:active {
 .delete-btn {
     background-color: #ef5350; /* Red */
     padding: 5px 10px;
-    font-size: 0.85em;
+    font-size: 0.8em;
     border-radius: 5px;
     box-shadow: none;
 }
@@ -136,8 +149,122 @@ button:active {
     box-shadow: none;
 }
 
-.loading, .no-reminders {
+.loading, .no-reminders, .no-selection {
     text-align: center;
     color: #777;
     padding: 20px;
+}
+
+/* --- Calendar Specific Styles --- */
+.calendar-nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    background-color: #bbdefb; /* Light blue for nav */
+    padding: 10px 15px;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.calendar-nav button {
+    background-color: #0288d1; /* Dark blue for nav buttons */
+    padding: 8px 15px;
+    font-size: 1em;
+    border-radius: 5px;
+    box-shadow: none;
+}
+
+.calendar-nav button:hover {
+    background-color: #01579b; /* Even darker blue */
+    transform: translateY(-1px);
+}
+
+#currentMonthYear {
+    font-size: 1.4em;
+    font-weight: bold;
+    color: #025381; /* Darkest blue for text */
+}
+
+.calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 5px;
+    padding: 10px;
+    background-color: #e3f2fd; /* Very light blue grid background */
+    border-radius: 8px;
+    box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.05);
+}
+
+.day-header {
+    background-color: #64b5f6; /* Medium blue for headers */
+    color: white;
+    padding: 8px 0;
+    text-align: center;
+    font-weight: bold;
+    border-radius: 5px;
+    font-size: 0.9em;
+}
+
+.calendar-day {
+    background-color: #ffffff;
+    padding: 10px 5px;
+    text-align: center;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.2s ease, transform 0.1s ease;
+    min-height: 50px; /* Ensure consistent height */
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
+    position: relative;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.calendar-day.empty-day {
+    background-color: #f0f0f0; /* Gray for empty cells */
+    cursor: default;
+    box-shadow: none;
+}
+
+.calendar-day:not(.empty-day):hover {
+    background-color: #e3f2fd; /* Lighter blue on hover */
+    transform: translateY(-1px);
+}
+
+.calendar-day.selected {
+    background-color: #0288d1; /* Darker blue for selected day */
+    color: white;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    transform: translateY(-2px);
+}
+
+.day-number {
+    font-size: 1.1em;
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.reminder-marker {
+    width: 6px;
+    height: 6px;
+    background-color: #ef5350; /* Red dot for reminders */
+    border-radius: 50%;
+    margin-top: auto; /* Push marker to bottom */
+}
+
+.reminder-marker.multi {
+    background-color: #ff9800; /* Orange dot for multiple reminders */
+}
+
+/* Media Queries for smaller screens */
+@media (max-width: 900px) {
+    .main-content {
+        flex-direction: column;
+    }
+    .left-panel, .right-panel {
+        width: 100%;
+    }
 }
