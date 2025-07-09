@@ -1,11 +1,19 @@
 import os
+from flask import Flask, request, jsonify, render_template
 from datetime import datetime, timedelta
 import re
 import pytz 
-import uuid # Diperlukan untuk ID jika Anda menggunakannya di objek Reminder (opsional)
+import uuid 
+
+
+# --- INISIALISASI APLIKASI FLASK ---
+# Variabel 'app' harus didefinisikan di sini
+app = Flask(__name__)
+
+# --- PENYIMPANAN PENGINGAT DI MEMORI (TIDAK PERSISTEN) ---
+reminders_in_memory = []
 
 # --- KONFIGURASI ZONA WAKTU ---
-# Menggunakan zona waktu Jakarta (WIB) untuk pemrosesan waktu lokal
 LOCAL_TIMEZONE = pytz.timezone('Asia/Jakarta') 
 
 TIMEZONE_MAP = {
@@ -20,23 +28,34 @@ TIMEZONE_MAP = {
     "gmt-7": "Etc/GMT+7"
 }
 
-# --- MODEL PENGINGAT (Sederhana untuk memori) ---
-# Ini bukan model SQLAlchemy atau ORM. Hanya kelas Python untuk menampung data.
-class ReminderData:
+# --- MODEL PENGINGAT (VERSI SIMPLIFIKASI UNTUK MEMORI) ---
+class Reminder:
     def __init__(self, id, user_id, text, reminder_time, created_at, is_completed, repeat_type, repeat_interval):
         self.id = id
         self.user_id = user_id
         self.text = text
-        self.reminder_time = reminder_time # datetime object
+        self.reminder_time = reminder_time 
         self.created_at = created_at
         self.is_completed = is_completed
         self.repeat_type = repeat_type
         self.repeat_interval = repeat_interval
 
     def to_dict(self):
-        # Mengonversi datetime ke string ISO untuk tampilan
-        reminder_time_iso = self.reminder_time.isoformat() if self.reminder_time else None
-        created_at_iso = self.created_at.isoformat() if self.created_at else None
+        reminder_time_iso = None
+        if self.reminder_time:
+            try:
+                reminder_time_iso = self.reminder_time.isoformat()
+            except Exception as dt_e:
+                print(f"ERROR in to_dict (reminder_time): Failed to isoformat {self.reminder_time}: {dt_e}")
+                reminder_time_iso = self.reminder_time.strftime('%Y-%m-%dT%H:%M:%S')
+
+        created_at_iso = None
+        if self.created_at:
+            try:
+                created_at_iso = self.created_at.isoformat()
+            except Exception as dt_e:
+                print(f"ERROR in to_dict (created_at): Failed to isoformat {self.created_at}: {dt_e}")
+                created_at_iso = self.created_at.strftime('%Y-%m-%dT%H:%M:%S')
 
         return {
             "id": str(self.id) if self.id else None, 
@@ -49,8 +68,8 @@ class ReminderData:
             "repeat_interval": int(self.repeat_interval) if self.repeat_interval is not None else 0 
         }
 
+
 # --- FUNGSI NLP: extract_schedule ---
-# Ini adalah inti AI Anda yang mengurai teks untuk menemukan jadwal.
 def extract_schedule(text):
     original_text = text.lower()
     processed_text = original_text 
@@ -58,6 +77,8 @@ def extract_schedule(text):
     now_local = datetime.now(LOCAL_TIMEZONE) 
     scheduled_datetime_aware = now_local 
     
+    default_hour, default_minute = 9, 0
+
     target_tz = LOCAL_TIMEZONE 
     tz_matched = False
     tz_pattern_parts = [re.escape(k) for k in TIMEZONE_MAP.keys()]
@@ -75,7 +96,6 @@ def extract_schedule(text):
     
     repeat_type = "none" 
     repeat_interval = 0
-    default_hour, default_minute = 9, 0
 
     monthly_repeat_pattern = r'(?:setiap|tiap)\s*(\d+)\s*bulan|(?:(\d+)\s*bulan\s*kedepan)'
     monthly_repeat_match = re.search(monthly_repeat_pattern, processed_text)
@@ -316,8 +336,9 @@ if __name__ == "__main__":
         parsed_info = extract_schedule(text)
 
         if parsed_info:
+            formatted_datetime = parsed_info['datetime'].strftime('%d %B %Y %H:%M:%S %Z%z')
             print(f"  Event: {parsed_info['event']}")
-            print(f"  Jadwal: {parsed_info['datetime'].strftime('%d %B %Y %H:%M:%S %Z%z')}")
+            print(f"  Jadwal: {formatted_datetime}")
             print(f"  Pengulangan: {parsed_info['repeat_type']} (Interval: {parsed_info['repeat_interval']})")
         else:
             print("  Tidak dapat mengurai jadwal atau waktu sudah lampau.")
