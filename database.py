@@ -9,15 +9,13 @@ def init_db():
         CREATE TABLE IF NOT EXISTS reminders (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id TEXT NOT NULL,
-            event TEXT NOT NULL,
-            description TEXT,  -- Kolom baru untuk deskripsi umum seperti "In-office day"
-            notes TEXT,        -- Kolom baru untuk catatan tambahan
-            mood TEXT,         -- Kolom baru untuk mood
-            suggestion TEXT,   -- Kolom baru untuk saran
+            event TEXT NOT NULL,          -- Tetap ada untuk judul utama
+            metadata TEXT,                -- <<< KOLOM BARU UNTUK DATA TERSTRUKTUR (JSON STRING)
             datetime TEXT NOT NULL,
             repeat_type TEXT DEFAULT 'none',
             repeat_interval INTEGER DEFAULT 0,
             notified BOOLEAN DEFAULT 0
+            -- Kolom description, notes, mood, suggestion dihapus
         )
     ''')
     conn.commit()
