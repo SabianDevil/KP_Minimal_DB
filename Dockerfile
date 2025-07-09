@@ -7,10 +7,13 @@ WORKDIR /app
 # Salin file requirements.txt ke direktori kerja
 COPY requirements.txt .
 
-# Instal dependensi Python dan model SpaCy
-# --no-cache-dir untuk hemat ruang
-# Perintah python -m spacy download id_core_news_sm dihapus karena sudah di requirements.txt
+# Instal dependensi Python
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Unduh model SpaCy secara terpisah
+# Pilih model yang Anda inginkan (salah satu atau keduanya jika mau):
+RUN python -m spacy download id_core_news_sm
+# RUN python -m spacy download en_core_web_sm # Jika Anda juga butuh bahasa Inggris
 
 # Salin semua file lainnya ke direktori kerja kontainer
 COPY . .
