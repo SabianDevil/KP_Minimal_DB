@@ -5,7 +5,6 @@ import re
 import pytz 
 import uuid 
 
-
 # --- INISIALISASI APLIKASI FLASK ---
 app = Flask(__name__)
 
@@ -341,7 +340,7 @@ def set_reminder_api():
         id=str(uuid.uuid4()), 
         user_id="default_user",
         text=parsed_schedule['event'],
-        reminder_time=parsed_schedule['datetime'], 
+        reminder_time=parsed_schedule['datetime'], # Ini sudah aware
         created_at=datetime.now(LOCAL_TIMEZONE),
         is_completed=False,
         repeat_type=parsed_schedule['repeat_type'],
@@ -407,7 +406,7 @@ def delete_reminder_api(reminder_id):
 
 # --- Bagian untuk menjalankan Flask App ---
 if __name__ == '__main__':
-    print("--- Aplikasi Flask AI Pengingat Dimulai ---")
+    print("--- Memulai Aplikasi Flask AI Pengingat ---")
     port = int(os.getenv("PORT", 5000))
     print(f"INFO: Flask app running on port {port}")
-    app.run(debug=False, host='0.0.0.0', port=port)
+    app.run(debug=False, host='0.0.0.0', port=port) # Ubah debug=True ke debug=False untuk Railway
