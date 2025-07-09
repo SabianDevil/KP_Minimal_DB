@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Reminder App</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    
+    <link href='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/main.min.css' rel='stylesheet' />
+</head>
+<body>
+    <div class="main-wrapper">
+        <header>
+            <h1>AI Pengingat Pribadi</h1>
+            <div class="timezone-clocks">
+                <div class="clock-item">
+                    <span id="localClock" class="clock"></span>
+                    <span class="timezone-label">Lokal</span>
+                </div>
+                <div class="clock-item">
+                    <span id="wibClock" class="clock"></span>
+                    <span class="timezone-label">WIB</span>
+                </div>
+                <div class="clock-item">
+                    <span id="witaClock" class="clock"></span>
+                    <span class="timezone-label">WITA</span>
+                </div>
+                <div class="clock-item">
+                    <span id="witClock" class="clock"></span>
+                    <span class="timezone-label">WIT</span>
+                </div>
+            </div>
+        </header>
+
+        <div class="content-container">
+            <div class="left-column">
+                <div class="input-section card">
+                    <h2>Set Pengingat Baru</h2>
+                    <textarea id="reminderText" placeholder="Contoh: Ingatkan saya rapat jam 3 sore besok" rows="8"></textarea>
+                    <button id="setReminderBtn">Set Pengingat</button>
+                    <div class="message-area" id="reminderMessageArea"></div>
+                </div>
+
+                <div class="reminder-list-section card">
+                    <h2>Daftar Pengingat</h2>
+                    <ul id="reminderList">
+                        <li>Memuat pengingat...</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="right-column">
+                <div class="calendar-section card">
+                    <h2>Kalender Jadwal</h2>
+                    <div id="calendar"></div> </div>
+            </div>
+        </div>
+    </div>
+
+    <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/main.min.js'></script>
+    <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/locales-all.min.js'></script>
+    
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
