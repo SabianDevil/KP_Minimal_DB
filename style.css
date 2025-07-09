@@ -290,3 +290,14 @@ button:active {
         padding: 15px; /* Reduce padding on smaller screens */
     }
 }
+.realtime-clock {
+    font-size: 1.2em;
+    font-weight: bold;
+    color: #007bb6; /* Warna biru yang bagus */
+    margin-bottom: 20px;
+    text-align: center;
+    padding: 10px;
+    background-color: #e8f5e9; /* Latar belakang hijau muda */
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
