@@ -301,3 +301,69 @@ button:active {
     border-radius: 8px;
     box-shadow: 0 2px 5px rgba(0,0,0,0.05);
 }
+
+/* ... (CSS yang sudah ada untuk .reminder-item) ... */
+
+.reminder-item {
+    background-color: #ffffff;
+    padding: 10px 15px;
+    margin-bottom: 8px;
+    border-radius: 6px;
+    border: 1px solid #cfd8dc;
+    display: flex;
+    flex-direction: column; /* Mengubah arah flex menjadi kolom untuk detail di bawah */
+    align-items: flex-start; /* Sejajarkan konten ke kiri */
+    word-wrap: break-word;
+    white-space: normal;
+    font-size: 0.95em;
+    position: relative; /* Untuk posisi tombol toggle */
+}
+
+.reminder-main-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%; /* Pastikan konten utama mengambil lebar penuh */
+}
+
+.reminder-main-content span {
+    flex-grow: 1;
+    margin-right: 10px;
+    line-height: 1.4;
+    padding-right: 20px; /* Ruang untuk tombol toggle di kanan */
+}
+
+.reminder-toggle-btn {
+    font-size: 0.8em;
+    color: #007bb6;
+    cursor: pointer;
+    text-decoration: underline;
+    margin-top: 5px; /* Ruang dari teks utama */
+    align-self: flex-end; /* Posisikan ke kanan bawah */
+    position: absolute;
+    bottom: 5px;
+    right: 15px;
+    padding: 2px 5px;
+    background-color: #e3f2fd;
+    border-radius: 3px;
+    transition: background-color 0.2s ease;
+}
+
+.reminder-toggle-btn:hover {
+    background-color: #c0ddee;
+}
+
+
+.reminder-detail-content {
+    width: 100%;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed #e0e0e0;
+    font-size: 0.9em;
+    color: #555;
+    text-align: left;
+}
+
+.reminder-detail-content p {
+    margin: 3px 0;
+}
