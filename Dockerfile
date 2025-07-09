@@ -3,9 +3,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app.py .
-# --- PERBAIKAN DI SINI ---
-# Pastikan PORT tersetel (komentar ini di baris terpisah)
+COPY templates/ templates/
+COPY static/ static/ # Pastikan folder static ada dan berisi style_minimal.css & script_minimal.js
 ENV PORT=5000 
-# --- AKHIR PERBAIKAN ---
 EXPOSE 5000
 CMD ["python", "app.py"]
